@@ -18,7 +18,7 @@ uv run ruff format               # format
 uv run pyright                   # type check
 ```
 
-Pre-commit hooks run all of the above (including 100% test coverage). Commit must pass all hooks.
+Pre-commit hooks run all of the above (including 100% test coverage). Commit must pass all hooks. `--no-verify` is FORBIDDEN and may NEVER be used.
 
 ## Code Conventions
 
