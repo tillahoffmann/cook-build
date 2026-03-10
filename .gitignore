@@ -1,0 +1,9 @@
+__pycache__/
+.coverage
+.venv
+*.egg-info
+build/
+dist/
+playground/
+tickets/
+wheels/
