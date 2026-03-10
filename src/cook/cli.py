@@ -10,7 +10,12 @@ from pathlib import Path
 from cook.config import ConfigError, load_config
 from cook.context import Context, get_context
 from cook.executor import LocalExecutor, TaskExecutionError
-from cook.scheduler import BuildError, Scheduler, TaskOutputError
+from cook.scheduler import (
+    BuildError,
+    Scheduler,
+    TaskOutputError,
+    compute_effective_digest,
+)
 from cook.store.sqlite import SqliteBuildStore
 from cook.task import Task
 
@@ -118,6 +123,12 @@ def _compute_staleness(
 
     # Check outputs exist
     if not all(Path(o).resolve().exists() for o in task.outputs):
+        seen[task.name] = True
+        return True
+
+    # Compute effective digest and compare with stored one
+    effective = compute_effective_digest(task, store)
+    if effective is None or effective != record.digest:
         seen[task.name] = True
         return True
 

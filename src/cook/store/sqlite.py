@@ -56,9 +56,9 @@ class SqliteBuildStore(BuildStore):
             VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(task_id) DO UPDATE SET
                 digest=excluded.digest,
-                last_started=excluded.last_started,
-                last_succeeded=excluded.last_succeeded,
-                last_failed=excluded.last_failed,
+                last_started=COALESCE(excluded.last_started, tasks.last_started),
+                last_succeeded=COALESCE(excluded.last_succeeded, tasks.last_succeeded),
+                last_failed=COALESCE(excluded.last_failed, tasks.last_failed),
                 duration=excluded.duration,
                 error=excluded.error
             """,

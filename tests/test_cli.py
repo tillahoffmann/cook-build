@@ -601,3 +601,34 @@ def test_main_as_script(project: Path) -> None:
     import cook.cli
 
     assert hasattr(cook.cli, "main")
+
+
+def test_dry_run_detects_modified_source(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """After modifying a source file, dry-run should show the task as stale."""
+    infile = project / "src.txt"
+    infile.write_text("v1")
+    outfile = project / "out.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="build", cmd="cat {infile} > {outfile}", inputs=["{infile}"], outputs=["{outfile}"])
+        """,
+    )
+    # Build successfully
+    rc = main(["exec", "build"])
+    assert rc == 0
+    assert outfile.read_text().strip() == "v1"
+    capsys.readouterr()
+
+    # Modify the source file
+    infile.write_text("v2")
+
+    # Dry run should detect staleness
+    rc = main(["exec", "--dry-run", "build"])
+    assert rc == 0
+    captured = capsys.readouterr().out
+    assert "STALE (would run)" in captured

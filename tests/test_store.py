@@ -111,6 +111,41 @@ def test_wal_mode(store: SqliteBuildStore) -> None:
     assert row[0] == "wal"
 
 
+def test_save_preserves_timing_fields_with_coalesce(store: SqliteBuildStore) -> None:
+    """Saving a success record after a failure should not erase last_failed."""
+    failed_at = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    store.save(
+        TaskRecord(
+            task_id="t",
+            digest="d1",
+            last_started=failed_at,
+            last_failed=failed_at,
+            duration=1.0,
+            error="boom",
+        )
+    )
+
+    succeeded_at = datetime(2025, 1, 1, 13, 0, 0, tzinfo=timezone.utc)
+    store.save(
+        TaskRecord(
+            task_id="t",
+            digest="d2",
+            last_started=succeeded_at,
+            last_succeeded=succeeded_at,
+            last_failed=None,
+            duration=2.0,
+        )
+    )
+
+    got = store.get("t")
+    assert got is not None
+    assert got.digest == "d2"
+    assert got.last_started == succeeded_at
+    assert got.last_succeeded == succeeded_at
+    # last_failed should be preserved from the earlier save, not overwritten with None
+    assert got.last_failed == failed_at
+
+
 def test_build_store_is_abc() -> None:
     with pytest.raises(TypeError):
         BuildStore()  # type: ignore[abstract]

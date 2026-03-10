@@ -43,6 +43,45 @@ def _task_name_from_error(e: Exception) -> str:
     return str(e)
 
 
+def compute_effective_digest(task: Task, store: BuildStore) -> str | None:
+    """Compute the effective digest for a task given a store.
+
+    Returns None if the task has no outputs or if any dependency
+    propagates None (e.g. a dep with no outputs).
+    """
+    if not task.outputs:
+        return None
+
+    dep_digests: list[tuple[str, str]] = []
+    for dep in sorted(task.task_deps, key=lambda d: d.name):
+        if not dep.outputs:
+            return None
+        dep_record = store.get(dep.task_id)
+        if dep_record is None:
+            return None
+        dep_digests.append((dep.name, dep_record.digest))
+
+    h = hashlib.sha256()
+    h.update(task.digest().encode())
+
+    file_inputs = sorted(task.file_inputs, key=lambda f: str(Path(f).resolve()))
+    for fi in file_inputs:
+        resolved = Path(fi).resolve()
+        try:
+            data = resolved.read_bytes()
+        except FileNotFoundError:
+            raise FileNotFoundError(
+                f"Input file '{resolved}' not found for task '{task.name}'"
+            )
+        h.update(str(resolved).encode())
+        h.update(data)
+
+    for name, digest in dep_digests:
+        h.update(digest.encode())
+
+    return h.hexdigest()
+
+
 class Scheduler:
     def __init__(
         self,
@@ -195,34 +234,4 @@ class Scheduler:
             )
 
     def _compute_effective_digest(self, task: Task) -> str | None:
-        # No outputs => always run
-        if not task.outputs:
-            return None
-
-        # Check for None propagation from deps
-        dep_digests: list[tuple[str, str]] = []
-        for dep in sorted(task.task_deps, key=lambda d: d.name):
-            dep_record = self._store.get(dep.task_id)
-            # If dep has no outputs, its effective digest is None
-            if not dep.outputs:
-                return None
-            # If dep didn't run successfully (no record), treat as None
-            if dep_record is None:
-                return None
-            dep_digests.append((dep.name, dep_record.digest))
-
-        h = hashlib.sha256()
-        h.update(task.digest().encode())
-
-        # Hash file inputs sorted by resolved path
-        file_inputs = sorted(task.file_inputs, key=lambda f: str(Path(f).resolve()))
-        for fi in file_inputs:
-            resolved = Path(fi).resolve()
-            h.update(str(resolved).encode())
-            h.update(resolved.read_bytes())
-
-        # Hash dep effective digests sorted by name
-        for name, digest in dep_digests:
-            h.update(digest.encode())
-
-        return h.hexdigest()
+        return compute_effective_digest(task, self._store)

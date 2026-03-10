@@ -217,7 +217,7 @@ async def test_none_propagation(
     await sched2.run([task_b])
     captured = capsys.readouterr().out
     # Both A and B should run both times (None propagation)
-    assert captured.count("[downstream] started") >= 1
+    assert captured.count("[downstream] started") >= 2
 
 
 async def test_output_validation(
@@ -308,13 +308,13 @@ async def test_keep_going_independent_tasks(
     )
     task_good = ShellTask(
         name="good-task",
-        cmd=f"echo ok > {good_out}",
+        cmd=f"sleep 0.1 && echo ok > {good_out}",
         outputs=[str(good_out)],
     )
     sched = Scheduler(store, executor, keep_going=True)
     with pytest.raises(BuildError) as exc_info:
         await sched.run([task_fail, task_good])
-    # Good task still ran
+    # Good task still ran despite the failure being observed first
     assert good_out.exists()
     assert len(exc_info.value.failures) >= 1
 
@@ -512,3 +512,20 @@ async def test_dependency_failed_error_attributes(
     ]
     assert len(dep_errors) >= 1
     assert dep_errors[0].failed_dep == "root-fail"
+
+
+async def test_missing_file_input_clear_error(
+    tmp_path: Path,
+    store: SqliteBuildStore,
+    executor: LocalExecutor,
+) -> None:
+    outfile = tmp_path / "out.txt"
+    task = ShellTask(
+        name="bad-input",
+        cmd=f"echo x > {outfile}",
+        inputs=[str(tmp_path / "nonexistent.txt")],
+        outputs=[str(outfile)],
+    )
+    sched = Scheduler(store, executor)
+    with pytest.raises(FileNotFoundError, match="nonexistent.txt"):
+        await sched.run([task])
