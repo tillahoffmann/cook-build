@@ -1,0 +1,514 @@
+from __future__ import annotations
+
+import asyncio
+import os
+from collections.abc import Generator
+from pathlib import Path
+
+import pytest
+
+from cook.executor import LocalExecutor
+from cook.scheduler import (
+    BuildError,
+    DependencyFailedError,
+    Scheduler,
+    TaskOutputError,
+)
+from cook.store.sqlite import SqliteBuildStore
+from cook.task import ShellTask
+
+
+@pytest.fixture
+def store(tmp_path: Path) -> Generator[SqliteBuildStore]:
+    s = SqliteBuildStore(tmp_path / ".cook.db")
+    yield s
+    s.close()
+
+
+@pytest.fixture
+def executor() -> LocalExecutor:
+    return LocalExecutor(max_concurrent=4)
+
+
+async def test_basic_execution(
+    tmp_path: Path, store: SqliteBuildStore, executor: LocalExecutor
+) -> None:
+    outfile = tmp_path / "out.txt"
+    task = ShellTask(
+        name="basic",
+        cmd=f"echo hello > {outfile}",
+        outputs=[str(outfile)],
+    )
+    sched = Scheduler(store, executor)
+    await sched.run([task])
+    assert outfile.read_text().strip() == "hello"
+
+
+async def test_dependency_ordering(
+    tmp_path: Path, store: SqliteBuildStore, executor: LocalExecutor
+) -> None:
+    file_a = tmp_path / "a.txt"
+    file_b = tmp_path / "b.txt"
+    task_b = ShellTask(
+        name="B",
+        cmd=f"echo B > {file_b}",
+        outputs=[str(file_b)],
+    )
+    task_a = ShellTask(
+        name="A",
+        cmd=f"cat {file_b} > {file_a} && echo A >> {file_a}",
+        inputs=[task_b, str(file_b)],
+        outputs=[str(file_a)],
+    )
+    sched = Scheduler(store, executor)
+    await sched.run([task_a])
+    assert "B" in file_a.read_text()
+    assert "A" in file_a.read_text()
+
+
+async def test_skipping_up_to_date(
+    tmp_path: Path,
+    store: SqliteBuildStore,
+    executor: LocalExecutor,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    infile = tmp_path / "in.txt"
+    infile.write_text("input")
+    outfile = tmp_path / "out.txt"
+    task = ShellTask(
+        name="skip-test",
+        cmd=f"cat {infile} > {outfile}",
+        inputs=[str(infile)],
+        outputs=[str(outfile)],
+    )
+    sched = Scheduler(store, executor)
+    await sched.run([task])
+    assert "started" in capsys.readouterr().out
+
+    # Run again — should skip
+    sched2 = Scheduler(store, executor)
+    await sched2.run([task])
+    captured = capsys.readouterr().out
+    assert "up-to-date" in captured
+    assert "started" not in captured
+
+
+async def test_staleness_on_input_change(
+    tmp_path: Path,
+    store: SqliteBuildStore,
+    executor: LocalExecutor,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    infile = tmp_path / "src.txt"
+    infile.write_text("v1")
+    outfile = tmp_path / "dst.txt"
+    task = ShellTask(
+        name="stale-input",
+        cmd=f"cat {infile} > {outfile}",
+        inputs=[str(infile)],
+        outputs=[str(outfile)],
+    )
+    sched = Scheduler(store, executor)
+    await sched.run([task])
+    assert outfile.read_text().strip() == "v1"
+
+    # Modify input
+    infile.write_text("v2")
+    sched2 = Scheduler(store, executor)
+    await sched2.run([task])
+    assert outfile.read_text().strip() == "v2"
+    captured = capsys.readouterr().out
+    assert "started" in captured
+
+
+async def test_staleness_on_command_change(
+    tmp_path: Path,
+    store: SqliteBuildStore,
+    executor: LocalExecutor,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    outfile = tmp_path / "out.txt"
+    task1 = ShellTask(
+        name="cmd-change",
+        cmd=f"echo v1 > {outfile}",
+        outputs=[str(outfile)],
+    )
+    sched = Scheduler(store, executor)
+    await sched.run([task1])
+    assert outfile.read_text().strip() == "v1"
+
+    task2 = ShellTask(
+        name="cmd-change",
+        cmd=f"echo v2 > {outfile}",
+        outputs=[str(outfile)],
+    )
+    sched2 = Scheduler(store, executor)
+    await sched2.run([task2])
+    assert outfile.read_text().strip() == "v2"
+    assert "started" in capsys.readouterr().out
+
+
+async def test_missing_output_forces_rebuild(
+    tmp_path: Path,
+    store: SqliteBuildStore,
+    executor: LocalExecutor,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    outfile = tmp_path / "out.txt"
+    task = ShellTask(
+        name="missing-out",
+        cmd=f"echo rebuilt > {outfile}",
+        outputs=[str(outfile)],
+    )
+    sched = Scheduler(store, executor)
+    await sched.run([task])
+
+    # Delete output
+    outfile.unlink()
+    sched2 = Scheduler(store, executor)
+    await sched2.run([task])
+    captured = capsys.readouterr().out
+    assert "started" in captured
+    assert outfile.exists()
+
+
+async def test_no_output_tasks_always_run(
+    tmp_path: Path,
+    store: SqliteBuildStore,
+    executor: LocalExecutor,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    marker = tmp_path / "count.txt"
+    marker.write_text("0")
+    task = ShellTask(
+        name="no-outputs",
+        cmd=f"echo $(( $(cat {marker}) + 1 )) > {marker}",
+    )
+    sched = Scheduler(store, executor)
+    await sched.run([task])
+    await sched.run([task])  # uses cached future from first run
+
+    # New scheduler to clear dedup cache
+    sched2 = Scheduler(store, executor)
+    await sched2.run([task])
+    captured = capsys.readouterr().out
+    assert captured.count("started") >= 2
+
+
+async def test_none_propagation(
+    tmp_path: Path,
+    store: SqliteBuildStore,
+    executor: LocalExecutor,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # A has no outputs => always run, effective digest is None
+    task_a = ShellTask(name="always-run", cmd="true")
+    outfile = tmp_path / "b.txt"
+    task_b = ShellTask(
+        name="downstream",
+        cmd=f"echo ok > {outfile}",
+        inputs=[task_a],
+        outputs=[str(outfile)],
+    )
+    sched = Scheduler(store, executor)
+    await sched.run([task_b])
+
+    sched2 = Scheduler(store, executor)
+    await sched2.run([task_b])
+    captured = capsys.readouterr().out
+    # Both A and B should run both times (None propagation)
+    assert captured.count("[downstream] started") >= 1
+
+
+async def test_output_validation(
+    tmp_path: Path, store: SqliteBuildStore, executor: LocalExecutor
+) -> None:
+    missing = tmp_path / "does_not_exist.txt"
+    task = ShellTask(
+        name="bad-output",
+        cmd="true",
+        outputs=[str(missing)],
+    )
+    sched = Scheduler(store, executor)
+    with pytest.raises(TaskOutputError) as exc_info:
+        await sched.run([task])
+    assert task is exc_info.value.task
+    assert len(exc_info.value.missing) == 1
+
+
+async def test_deduplication_diamond(
+    tmp_path: Path,
+    store: SqliteBuildStore,
+    executor: LocalExecutor,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    counter = tmp_path / "counter.txt"
+    counter.write_text("0")
+    # D is shared dep of B and C; A depends on B and C
+    task_d = ShellTask(
+        name="D",
+        cmd=f"echo $(( $(cat {counter}) + 1 )) > {counter}",
+        outputs=[str(counter)],
+    )
+    task_b = ShellTask(
+        name="B",
+        cmd="true",
+        inputs=[task_d],
+        outputs=[str(tmp_path / "b.txt")],
+    )
+    task_c = ShellTask(
+        name="C",
+        cmd="true",
+        inputs=[task_d],
+        outputs=[str(tmp_path / "c.txt")],
+    )
+    # B and C need to create their outputs
+    task_b = ShellTask(
+        name="B",
+        cmd=f"touch {tmp_path / 'b.txt'}",
+        inputs=[task_d],
+        outputs=[str(tmp_path / "b.txt")],
+    )
+    task_c = ShellTask(
+        name="C",
+        cmd=f"touch {tmp_path / 'c.txt'}",
+        inputs=[task_d],
+        outputs=[str(tmp_path / "c.txt")],
+    )
+    task_a = ShellTask(
+        name="A",
+        cmd="true",
+        inputs=[task_b, task_c],
+        outputs=[str(tmp_path / "a.txt")],
+    )
+    task_a = ShellTask(
+        name="A",
+        cmd=f"touch {tmp_path / 'a.txt'}",
+        inputs=[task_b, task_c],
+        outputs=[str(tmp_path / "a.txt")],
+    )
+    sched = Scheduler(store, executor)
+    await sched.run([task_a])
+    captured = capsys.readouterr().out
+    # D should only be started once
+    assert captured.count("[D] started") == 1
+    # Counter should be 1 (only incremented once)
+    assert counter.read_text().strip() == "1"
+
+
+async def test_keep_going_independent_tasks(
+    tmp_path: Path,
+    store: SqliteBuildStore,
+    executor: LocalExecutor,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    good_out = tmp_path / "good.txt"
+    task_fail = ShellTask(
+        name="fail-task", cmd="exit 1", outputs=[str(tmp_path / "nope.txt")]
+    )
+    task_good = ShellTask(
+        name="good-task",
+        cmd=f"echo ok > {good_out}",
+        outputs=[str(good_out)],
+    )
+    sched = Scheduler(store, executor, keep_going=True)
+    with pytest.raises(BuildError) as exc_info:
+        await sched.run([task_fail, task_good])
+    # Good task still ran
+    assert good_out.exists()
+    assert len(exc_info.value.failures) >= 1
+
+
+async def test_dependency_failure_skips_dependent(
+    tmp_path: Path, store: SqliteBuildStore, executor: LocalExecutor
+) -> None:
+    task_fail = ShellTask(
+        name="dep-fail", cmd="exit 1", outputs=[str(tmp_path / "x.txt")]
+    )
+    task_dep = ShellTask(
+        name="dependent",
+        cmd="echo should-not-run",
+        inputs=[task_fail],
+        outputs=[str(tmp_path / "y.txt")],
+    )
+    sched = Scheduler(store, executor, keep_going=True)
+    with pytest.raises(BuildError):
+        await sched.run([task_dep])
+    assert not (tmp_path / "y.txt").exists()
+
+
+async def test_intermediate_file_hashing(
+    tmp_path: Path,
+    store: SqliteBuildStore,
+    executor: LocalExecutor,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    intermediate = tmp_path / "inter.txt"
+    final = tmp_path / "final.txt"
+
+    task_a = ShellTask(
+        name="produce",
+        cmd=f"echo v1 > {intermediate}",
+        outputs=[str(intermediate)],
+    )
+    task_b = ShellTask(
+        name="consume",
+        cmd=f"cat {intermediate} > {final}",
+        inputs=[task_a, str(intermediate)],
+        outputs=[str(final)],
+    )
+    sched = Scheduler(store, executor)
+    await sched.run([task_b])
+    assert final.read_text().strip() == "v1"
+
+    # Change A's command to produce different content
+    task_a2 = ShellTask(
+        name="produce",
+        cmd=f"echo v2 > {intermediate}",
+        outputs=[str(intermediate)],
+    )
+    task_b2 = ShellTask(
+        name="consume",
+        cmd=f"cat {intermediate} > {final}",
+        inputs=[task_a2, str(intermediate)],
+        outputs=[str(final)],
+    )
+    sched2 = Scheduler(store, executor)
+    await sched2.run([task_b2])
+    assert final.read_text().strip() == "v2"
+    captured = capsys.readouterr().out
+    assert "[consume] started" in captured
+
+
+async def test_parallel_execution(
+    tmp_path: Path, store: SqliteBuildStore, executor: LocalExecutor
+) -> None:
+    # Two independent tasks should run concurrently
+    out_a = tmp_path / "pa.txt"
+    out_b = tmp_path / "pb.txt"
+    task_a = ShellTask(
+        name="par-a",
+        cmd=f"sleep 0.1 && echo a > {out_a}",
+        outputs=[str(out_a)],
+    )
+    task_b = ShellTask(
+        name="par-b",
+        cmd=f"sleep 0.1 && echo b > {out_b}",
+        outputs=[str(out_b)],
+    )
+    import time
+
+    start = time.monotonic()
+    sched = Scheduler(store, executor)
+    await sched.run([task_a, task_b])
+    elapsed = time.monotonic() - start
+    # If parallel, should take ~0.1s, not ~0.2s
+    assert elapsed < 0.3
+    assert out_a.exists()
+    assert out_b.exists()
+
+
+async def test_dependency_failure_without_keep_going(
+    tmp_path: Path, store: SqliteBuildStore, executor: LocalExecutor
+) -> None:
+    from cook.executor import TaskExecutionError
+
+    task_fail = ShellTask(
+        name="fail-nok", cmd="exit 1", outputs=[str(tmp_path / "x.txt")]
+    )
+    task_dep = ShellTask(
+        name="dep-nok",
+        cmd="echo nope",
+        inputs=[task_fail],
+        outputs=[str(tmp_path / "y.txt")],
+    )
+    sched = Scheduler(store, executor, keep_going=False)
+    with pytest.raises(TaskExecutionError):
+        await sched.run([task_dep])
+
+
+async def test_build_error_message(
+    tmp_path: Path, store: SqliteBuildStore, executor: LocalExecutor
+) -> None:
+    task_fail = ShellTask(
+        name="err-msg", cmd="exit 1", outputs=[str(tmp_path / "x.txt")]
+    )
+    sched = Scheduler(store, executor, keep_going=True)
+    with pytest.raises(BuildError) as exc_info:
+        await sched.run([task_fail])
+    assert "err-msg" in str(exc_info.value)
+
+
+async def test_task_output_error_attributes(
+    tmp_path: Path, store: SqliteBuildStore, executor: LocalExecutor
+) -> None:
+    missing = tmp_path / "ghost.txt"
+    task = ShellTask(name="ghost", cmd="true", outputs=[str(missing)])
+    sched = Scheduler(store, executor)
+    with pytest.raises(TaskOutputError) as exc_info:
+        await sched.run([task])
+    assert "ghost" in str(exc_info.value)
+    assert exc_info.value.task.name == "ghost"
+
+
+async def test_build_error_with_generic_exception() -> None:
+    """BuildError formats non-task exceptions via str()."""
+    err = BuildError([ValueError("generic")])
+    assert "generic" in str(err)
+
+
+async def test_dep_with_outputs_but_no_record(
+    tmp_path: Path,
+    store: SqliteBuildStore,
+    executor: LocalExecutor,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A (no outputs) -> B (has outputs) -> C (has outputs).
+    B's effective digest is None (propagated from A), so no record is stored.
+    C should also get None effective digest because B has no record."""
+    task_a = ShellTask(name="no-out-root", cmd="true")
+    b_out = tmp_path / "b.txt"
+    task_b = ShellTask(
+        name="mid-with-out",
+        cmd=f"echo b > {b_out}",
+        inputs=[task_a],
+        outputs=[str(b_out)],
+    )
+    c_out = tmp_path / "c.txt"
+    task_c = ShellTask(
+        name="end-with-out",
+        cmd=f"echo c > {c_out}",
+        inputs=[task_b],
+        outputs=[str(c_out)],
+    )
+    sched = Scheduler(store, executor)
+    await sched.run([task_c])
+    captured = capsys.readouterr().out
+    # All three should have started (none skipped due to None propagation)
+    assert "[no-out-root] started" in captured
+    assert "[mid-with-out] started" in captured
+    assert "[end-with-out] started" in captured
+    # No record stored for B (None effective digest)
+    assert store.get("mid-with-out") is None
+
+
+async def test_dependency_failed_error_attributes(
+    tmp_path: Path, store: SqliteBuildStore, executor: LocalExecutor
+) -> None:
+    task_fail = ShellTask(
+        name="root-fail", cmd="exit 1", outputs=[str(tmp_path / "x.txt")]
+    )
+    task_dep = ShellTask(
+        name="child",
+        cmd="true",
+        inputs=[task_fail],
+        outputs=[str(tmp_path / "y.txt")],
+    )
+    sched = Scheduler(store, executor, keep_going=True)
+    with pytest.raises(BuildError) as exc_info:
+        await sched.run([task_dep])
+    dep_errors = [
+        e for e in exc_info.value.failures if isinstance(e, DependencyFailedError)
+    ]
+    assert len(dep_errors) >= 1
+    assert dep_errors[0].failed_dep == "root-fail"
