@@ -17,15 +17,14 @@ async def _handle_shell_task(executor: Executor, task: Task) -> None:
         task.cmd,
         cwd=task.cwd,
         env=task.env,
-        stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, stderr = await proc.communicate()
+    _, stderr = await proc.communicate()
     if proc.returncode != 0:
         raise TaskExecutionError(
             task=task,
             returncode=proc.returncode or 1,
-            stderr=stderr.decode(),
+            stderr=stderr.decode() if stderr else "",
         )
 
 
