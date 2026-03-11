@@ -706,3 +706,109 @@ def test_dry_run_detects_modified_source(
     assert rc == 0
     captured = capsys.readouterr().out
     assert "STALE (would run)" in captured
+
+
+def test_validate_bad_recipe(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Validate with a broken recipe prints an error."""
+    _write_recipe(project, "raise RuntimeError('boom')")
+    rc = main(["validate", "*"])
+    assert rc == 1
+    assert "Error loading recipe" in capsys.readouterr().out
+
+
+def test_validate_marks_task_up_to_date(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Validate stores the effective digest so the task is up-to-date."""
+    outfile = project / "out.txt"
+    outfile.write_text("already built")
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="build", cmd="echo x > {outfile}", outputs=["{outfile}"])
+        """,
+    )
+    rc = main(["validate", "build"])
+    assert rc == 0
+    captured = capsys.readouterr().out
+    assert "[build] validated" in captured
+
+    # Now dry-run should show up-to-date
+    rc = main(["exec", "--dry-run", "build"])
+    assert rc == 0
+    captured = capsys.readouterr().out
+    assert "up-to-date" in captured
+
+
+def test_validate_skips_no_output_task(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Tasks with no outputs cannot be validated."""
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="check", cmd="true")
+        """,
+    )
+    rc = main(["validate", "check"])
+    assert rc == 0
+    captured = capsys.readouterr().out
+    assert "[check] skipped" in captured
+    assert "no outputs" in captured
+
+
+def test_validate_skips_missing_outputs(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Validate skips tasks whose output files don't exist."""
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="build", cmd="echo x", outputs=["{project / "ghost.txt"}"])
+        """,
+    )
+    rc = main(["validate", "build"])
+    assert rc == 0
+    captured = capsys.readouterr().out
+    assert "[build] skipped" in captured
+    assert "missing outputs" in captured
+
+
+def test_validate_with_deps(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Validate processes deps first so dependent digests are correct."""
+    dep_out = project / "dep.txt"
+    dep_out.write_text("dep done")
+    main_out = project / "main.txt"
+    main_out.write_text("main done")
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        dep = ctx.sh(name="dep", cmd="true", outputs=["{dep_out}"])
+        ctx.sh(
+            name="main",
+            cmd="true",
+            inputs=[dep],
+            outputs=["{main_out}"],
+        )
+        """,
+    )
+    rc = main(["validate", "main"])
+    assert rc == 0
+    captured = capsys.readouterr().out
+    assert "[dep] validated" in captured
+    assert "[main] validated" in captured
+
+    # Both should be up-to-date now
+    rc = main(["exec", "--dry-run", "*"])
+    assert rc == 0
+    captured = capsys.readouterr().out
+    assert "up-to-date" in captured
+    assert "STALE" not in captured

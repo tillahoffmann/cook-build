@@ -45,6 +45,7 @@ cook exec -k [pattern]           # keep going on failure (--keep-going)
 cook exec -j4 [pattern]          # run up to 4 tasks in parallel (--jobs)
 cook inspect [pattern]           # show dependency graph and staleness
 cook invalidate <pattern>        # force tasks to re-run next time
+cook validate <pattern>          # mark tasks as up-to-date without running
 ```
 
 Patterns use glob syntax (`fnmatch`). Dependencies of matched tasks are always included.
