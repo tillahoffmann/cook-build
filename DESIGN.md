@@ -208,7 +208,7 @@ executor = "local"
 default = "build-*"             # default target pattern for bare `cook exec`
 
 [cook.local]
-max_concurrent = 4
+max_concurrent = 8
 ```
 
 CLI flags override `cook.toml` values.

@@ -101,18 +101,19 @@ class Scheduler:
         self._failed = set()
         self._errors = []
 
-        if self._keep_going:
-            results = await asyncio.gather(
-                *(self._ensure(t) for t in targets), return_exceptions=True
-            )
-            for r in results:
-                if isinstance(r, Exception):
-                    if not any(r is e for e in self._errors):
-                        self._errors.append(r)
-            if self._errors:
+        # Always use return_exceptions=True to avoid gather cancelling
+        # in-flight subprocess tasks (which can deadlock asyncio.run shutdown).
+        results = await asyncio.gather(
+            *(self._ensure(t) for t in targets), return_exceptions=True
+        )
+        for r in results:
+            if isinstance(r, Exception):
+                if not any(r is e for e in self._errors):
+                    self._errors.append(r)
+        if self._errors:
+            if self._keep_going:
                 raise BuildError(self._errors)
-        else:
-            await asyncio.gather(*(self._ensure(t) for t in targets))
+            raise self._errors[0]
 
     async def _ensure(self, task: Task) -> None:
         if task.task_id in self._futures:
@@ -125,39 +126,42 @@ class Scheduler:
         try:
             await self._run_task(task)
             fut.set_result(None)
-        except Exception as exc:
-            # Accessing .exception() marks it as retrieved, suppressing
-            # "Future exception was never retrieved" warnings when the
-            # future is never awaited (e.g. single-target keep-going).
+        except BaseException as exc:
+            # Must catch BaseException (not Exception) so CancelledError
+            # also resolves the future — otherwise gather cancellation
+            # leaves unresolved futures that can deadlock the event loop.
             fut.set_exception(exc)
             fut.exception()
             raise
 
     async def _run_task(self, task: Task) -> None:
-        # 1. Ensure all dependencies
+        # 1. Ensure all dependencies (always return_exceptions to avoid
+        #    cancelling in-flight subprocesses)
+        dep_failed = False
         if task.task_deps:
-            if self._keep_going:
-                results = await asyncio.gather(
-                    *(self._ensure(dep) for dep in task.task_deps),
-                    return_exceptions=True,
-                )
-                for i, r in enumerate(results):
-                    if isinstance(r, Exception):
-                        dep = task.task_deps[i]
-                        self._failed.add(dep.task_id)
-                        if not any(r is e for e in self._errors):
-                            self._errors.append(r)
-            else:
-                await asyncio.gather(*(self._ensure(dep) for dep in task.task_deps))
+            results = await asyncio.gather(
+                *(self._ensure(dep) for dep in task.task_deps),
+                return_exceptions=True,
+            )
+            for i, r in enumerate(results):
+                if isinstance(r, Exception):
+                    dep = task.task_deps[i]
+                    self._failed.add(dep.task_id)
+                    dep_failed = True
+                    if not any(r is e for e in self._errors):
+                        self._errors.append(r)
 
-        # 2. Check for failed dependencies in keep-going mode
-        if self._keep_going:
-            for dep in task.task_deps:
-                if dep.task_id in self._failed:
-                    self._failed.add(task.task_id)
-                    err = DependencyFailedError(task, dep.task_id)
-                    self._errors.append(err)
-                    raise err
+        # 2. Check for failed dependencies
+        if dep_failed:
+            if self._keep_going:
+                failed_dep = next(
+                    d for d in task.task_deps if d.task_id in self._failed
+                )
+                self._failed.add(task.task_id)
+                err = DependencyFailedError(task, failed_dep.task_id)
+                self._errors.append(err)
+                raise err
+            raise self._errors[0]
 
         # 3. Compute effective digest AFTER deps complete
         effective = self._compute_effective_digest(task)

@@ -7,7 +7,7 @@ from cook.task import ShellTask, Task
 
 
 class LocalExecutor(Executor):
-    def __init__(self, max_concurrent: int = 4) -> None:
+    def __init__(self, max_concurrent: int = 1) -> None:
         super().__init__(max_concurrent)
 
 

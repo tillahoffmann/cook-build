@@ -105,7 +105,7 @@ recipe = "recipe.py"        # default recipe file
 default = "build-*"         # default pattern for bare `cook exec`
 
 [cook.local]
-max_concurrent = 4          # parallel task limit
+max_concurrent = 8          # parallel task limit (default: 1)
 ```
 
 All settings have sensible defaults. CLI flags override config values.

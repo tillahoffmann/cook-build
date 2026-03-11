@@ -10,7 +10,7 @@ def test_config_defaults():
     assert c.recipe == "recipe.py"
     assert c.executor == "local"
     assert c.default is None
-    assert c.local_max_concurrent == 4
+    assert c.local_max_concurrent == 1
 
 
 def test_load_config_missing_file(tmp_path: Path):
@@ -52,7 +52,7 @@ def test_load_config_partial_fields(tmp_path: Path):
     assert result.executor == "slurm"
     assert result.recipe == "recipe.py"
     assert result.default is None
-    assert result.local_max_concurrent == 4
+    assert result.local_max_concurrent == 1
 
 
 def test_load_config_invalid_toml(tmp_path: Path):

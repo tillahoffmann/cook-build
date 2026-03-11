@@ -514,6 +514,32 @@ async def test_dependency_failed_error_attributes(
     assert dep_errors[0].failed_dep == "root-fail"
 
 
+async def test_independent_failure_no_deadlock(
+    tmp_path: Path, store: SqliteBuildStore, executor: LocalExecutor
+) -> None:
+    """Two independent targets, one fails — the other should still complete
+    (not be cancelled or deadlocked). Regression test for subprocess
+    cancellation deadlock with semaphore concurrency limits."""
+    from cook.executor import TaskExecutionError
+
+    good_out = tmp_path / "good.txt"
+    task_fail = ShellTask(
+        name="ind-fail", cmd="exit 1", outputs=[str(tmp_path / "nope.txt")]
+    )
+    task_good = ShellTask(
+        name="ind-good",
+        cmd=f"echo ok > {good_out}",
+        outputs=[str(good_out)],
+    )
+    # Use max_concurrent=1 to maximize deadlock risk
+    limited_executor = LocalExecutor(max_concurrent=1)
+    sched = Scheduler(store, limited_executor, keep_going=False)
+    with pytest.raises(TaskExecutionError):
+        await sched.run([task_fail, task_good])
+    # Good task should have completed (not cancelled)
+    assert good_out.exists()
+
+
 async def test_missing_file_input_clear_error(
     tmp_path: Path,
     store: SqliteBuildStore,

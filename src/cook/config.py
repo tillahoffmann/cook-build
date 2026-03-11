@@ -14,7 +14,7 @@ class Config:
     recipe: str = "recipe.py"
     executor: str = "local"
     default: str | None = None
-    local_max_concurrent: int = 4
+    local_max_concurrent: int = 1
 
 
 def load_config(path: Path | None = None) -> Config:

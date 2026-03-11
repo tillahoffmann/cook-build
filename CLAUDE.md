@@ -28,6 +28,7 @@ Pre-commit hooks run all of the above (including 100% test coverage). Commit mus
 - Type annotations on all public APIs and function signatures. Internal helpers can skip annotations where types are obvious.
 - Prefer simple, direct code. Don't abstract prematurely. Three similar lines are better than a clever helper used once.
 - No docstrings on things that are self-evident. Add comments only where the *why* isn't obvious.
+- Use relative imports.
 
 ### Async
 
