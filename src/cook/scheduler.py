@@ -37,8 +37,10 @@ class BuildError(Exception):
 
 
 def _task_name_from_error(e: Exception) -> str:
-    if hasattr(e, "task"):
-        return e.task.name  # type: ignore[no-any-return]
+    from .executor import TaskExecutionError
+
+    if isinstance(e, (TaskOutputError, DependencyFailedError, TaskExecutionError)):
+        return e.task.name
     return str(e)
 
 
@@ -98,7 +100,10 @@ def is_stale(task: Task, store: BuildStore) -> bool:
         if is_stale(dep, store):
             return True
 
-    effective = compute_effective_digest(task, store)
+    try:
+        effective = compute_effective_digest(task, store)
+    except FileNotFoundError:
+        return True
     if effective is None:
         # A dependency has no outputs or no stored record despite passing
         # recursive staleness checks — conservatively treat as stale.

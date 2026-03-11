@@ -143,3 +143,15 @@ async def test_cwd_sets_working_directory(tmp_path: object) -> None:
     from pathlib import Path
 
     assert Path(result).resolve() == Path(str(tmp_path)).resolve()
+
+
+async def test_stderr_invalid_utf8() -> None:
+    """Binary stderr should not crash error reporting."""
+    executor = LocalExecutor()
+    # printf \xff produces an invalid UTF-8 byte
+    task = ShellTask(name="bad-utf8", cmd="printf '\\xff' >&2; exit 1")
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await executor.execute(task)
+    assert exc_info.value.returncode == 1
+    # Should contain the replacement character, not crash
+    assert isinstance(exc_info.value.stderr, str)

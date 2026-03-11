@@ -26,5 +26,5 @@ async def _handle_shell_task(executor: Executor, task: Task) -> None:
         raise TaskExecutionError(
             task=task,
             returncode=proc.returncode,
-            stderr=stderr.decode() if stderr else "",
+            stderr=stderr.decode(errors="replace") if stderr else "",
         )

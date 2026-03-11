@@ -696,3 +696,16 @@ async def test_is_stale_dep_stale_propagates(
     infile.write_text("v2")
     assert is_stale(dep, store) is True
     assert is_stale(task, store) is True
+
+
+def test_is_stale_missing_file_input(tmp_path: Path, store: SqliteBuildStore) -> None:
+    """Missing file input means the task is stale, not an error."""
+    outfile = tmp_path / "out.txt"
+    outfile.write_text("exists")
+    task = ShellTask(
+        name="missing-input",
+        cmd="true",
+        inputs=[str(tmp_path / "gone.txt")],
+        outputs=[str(outfile)],
+    )
+    assert is_stale(task, store) is True
