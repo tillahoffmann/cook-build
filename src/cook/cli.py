@@ -7,17 +7,17 @@ import importlib.util
 import sys
 from pathlib import Path
 
-from cook.config import ConfigError, load_config
-from cook.context import Context, get_context
-from cook.executor import TaskExecutionError, get_executor
-from cook.scheduler import (
+from .config import ConfigError, load_config
+from .context import Context, get_context
+from .executor import TaskExecutionError, get_executor
+from .scheduler import (
     BuildError,
     Scheduler,
     TaskOutputError,
     is_stale,
 )
-from cook.store.sqlite import SqliteBuildStore
-from cook.task import Task
+from .store.sqlite import SqliteBuildStore
+from .task import Task
 
 
 def _build_parser() -> argparse.ArgumentParser:

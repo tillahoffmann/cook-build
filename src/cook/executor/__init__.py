@@ -7,7 +7,7 @@ from typing import Any, TypeVar, overload
 
 _E = TypeVar("_E", bound="Executor")
 
-from cook.task import Task
+from ..task import Task
 
 
 class TaskExecutionError(Exception):
@@ -100,7 +100,7 @@ def get_executor(name: str) -> type[Executor]:
     return _executor_registry[name]
 
 
-from cook.executor.local import LocalExecutor
+from .local import LocalExecutor
 
 __all__ = [
     "Executor",

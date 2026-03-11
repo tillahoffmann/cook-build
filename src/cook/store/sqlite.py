@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import TracebackType
 
-from cook.store import BuildStore, TaskRecord
+from . import BuildStore, TaskRecord
 
 
 class SqliteBuildStore(BuildStore):

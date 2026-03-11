@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol
 
-from cook.task import Task
+from .task import Task
 
 
 class GraphTransform(Protocol):

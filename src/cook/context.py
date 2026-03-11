@@ -5,8 +5,8 @@ from contextvars import ContextVar, Token
 from pathlib import Path
 from typing import Self
 
-from cook.task import ShellTask, Task
-from cook.transform import DEFAULT_TRANSFORMS, GraphTransform
+from .task import ShellTask, Task
+from .transform import DEFAULT_TRANSFORMS, GraphTransform
 
 _active_context: ContextVar[Context | None] = ContextVar(
     "_active_context", default=None

@@ -6,9 +6,9 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from cook.executor import Executor
-from cook.store import BuildStore, TaskRecord
-from cook.task import Task
+from .executor import Executor
+from .store import BuildStore, TaskRecord
+from .task import Task
 
 
 class TaskOutputError(Exception):

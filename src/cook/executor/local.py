@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import asyncio
 
-from cook.executor import Executor, TaskExecutionError, register_executor
-from cook.task import ShellTask, Task
+from ..task import ShellTask, Task
+from . import Executor, TaskExecutionError, register_executor
 
 
 @register_executor("local")
