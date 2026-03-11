@@ -411,12 +411,24 @@ def test_inspect_no_pattern_no_default(
 def test_inspect_recipe_error(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _write_recipe(project, "raise RuntimeError('boom')\n")
-    # RuntimeError is not caught by the recipe loader, so it will bubble up
-    # Actually, only FileNotFoundError, ImportError, SyntaxError are caught
-    # Let's use a syntax error
     _write_recipe(project, "def\n")
     rc = main(["inspect", "*"])
+    assert rc == 1
+    assert "Error loading recipe" in capsys.readouterr().out
+
+
+def test_recipe_runtime_error(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _write_recipe(project, "raise RuntimeError('boom')\n")
+    rc = main(["exec", "*"])
+    assert rc == 1
+    assert "Error loading recipe" in capsys.readouterr().out
+
+
+def test_recipe_name_error(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _write_recipe(project, "undefined_variable\n")
+    rc = main(["exec", "*"])
     assert rc == 1
     assert "Error loading recipe" in capsys.readouterr().out
 

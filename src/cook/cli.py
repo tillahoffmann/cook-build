@@ -146,7 +146,7 @@ def _cmd_exec(args: argparse.Namespace) -> int:
     with Context() as ctx:
         try:
             _load_recipe(config.recipe)
-        except (FileNotFoundError, ImportError, SyntaxError) as e:
+        except Exception as e:
             print(f"Error loading recipe: {e}")
             return 1
 
@@ -182,7 +182,7 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
     with Context() as ctx:
         try:
             _load_recipe(config.recipe)
-        except (FileNotFoundError, ImportError, SyntaxError) as e:
+        except Exception as e:
             print(f"Error loading recipe: {e}")
             return 1
 
@@ -215,7 +215,7 @@ def _cmd_invalidate(args: argparse.Namespace) -> int:
     with Context() as ctx:
         try:
             _load_recipe(config.recipe)
-        except (FileNotFoundError, ImportError, SyntaxError) as e:
+        except Exception as e:
             print(f"Error loading recipe: {e}")
             return 1
 
