@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-from abc import ABC, abstractmethod
+from abc import ABC
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, TypeVar, overload
+
+_E = TypeVar("_E", bound="Executor")
 
 from cook.task import Task
 
@@ -18,8 +20,11 @@ class TaskExecutionError(Exception):
         )
 
 
+Handler = Callable[["Executor", Task], Awaitable[None]]
+
+
 class Executor(ABC):
-    _handlers: dict[type[Task], Callable[[Executor, Task], Awaitable[None]]] = {}
+    _handlers: dict[type[Task], Handler] = {}
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         super().__init_subclass__(**kwargs)
@@ -29,13 +34,34 @@ class Executor(ABC):
     def __init__(self, max_concurrent: int) -> None:
         self._semaphore = asyncio.Semaphore(max_concurrent)
 
+    @overload
+    @classmethod
+    def register_handler(
+        cls, handler: Handler, *, task_type: type[Task]
+    ) -> Handler: ...
+
+    @overload
+    @classmethod
+    def register_handler(
+        cls, *, task_type: type[Task]
+    ) -> Callable[[Handler], Handler]: ...
+
     @classmethod
     def register_handler(
         cls,
+        handler: Handler | None = None,
+        *,
         task_type: type[Task],
-        handler: Callable[[Executor, Task], Awaitable[None]],
-    ) -> None:
+    ) -> Handler | Callable[[Handler], Handler]:
+        if handler is None:
+
+            def decorator(fn: Handler) -> Handler:
+                cls._handlers[task_type] = fn
+                return fn
+
+            return decorator
         cls._handlers[task_type] = handler
+        return handler
 
     def _resolve_handler(
         self, task_type: type[Task]
@@ -54,6 +80,32 @@ class Executor(ABC):
             await handler(self, task)
 
 
+_executor_registry: dict[str, type[Executor]] = {}
+
+
+def register_executor(
+    name: str,
+) -> Callable[[type[_E]], type[_E]]:
+    def decorator(cls: type[_E]) -> type[_E]:
+        _executor_registry[name] = cls
+        return cls
+
+    return decorator
+
+
+def get_executor(name: str) -> type[Executor]:
+    if name not in _executor_registry:
+        available = ", ".join(sorted(_executor_registry)) or "(none)"
+        raise ValueError(f"Unknown executor {name!r}. Available: {available}")
+    return _executor_registry[name]
+
+
 from cook.executor.local import LocalExecutor
 
-__all__ = ["Executor", "LocalExecutor", "TaskExecutionError"]
+__all__ = [
+    "Executor",
+    "LocalExecutor",
+    "TaskExecutionError",
+    "get_executor",
+    "register_executor",
+]

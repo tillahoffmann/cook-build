@@ -9,7 +9,7 @@ from pathlib import Path
 
 from cook.config import ConfigError, load_config
 from cook.context import Context, get_context
-from cook.executor import LocalExecutor, TaskExecutionError
+from cook.executor import TaskExecutionError, get_executor
 from cook.scheduler import (
     BuildError,
     Scheduler,
@@ -108,8 +108,10 @@ def _cmd_exec(args: argparse.Namespace) -> int:
     config = load_config()
 
     executor_name = args.executor if args.executor is not None else config.executor
-    if executor_name != "local":
-        print(f"Error: unknown executor {executor_name!r}. Only 'local' is supported.")
+    try:
+        executor_cls = get_executor(executor_name)
+    except ValueError as e:
+        print(f"Error: {e}")
         return 1
 
     with Context() as ctx:
@@ -139,7 +141,7 @@ def _cmd_exec(args: argparse.Namespace) -> int:
         max_concurrent = (
             args.jobs if args.jobs is not None else config.local_max_concurrent
         )
-        executor = LocalExecutor(max_concurrent=max_concurrent)
+        executor = executor_cls(max_concurrent=max_concurrent)
         with SqliteBuildStore(".cook.db") as store:
             scheduler = Scheduler(store, executor, keep_going=args.keep_going)
             asyncio.run(scheduler.run(targets))

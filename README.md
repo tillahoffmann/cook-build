@@ -92,7 +92,7 @@ Subclass `Task` as a dataclass and register a handler with the executor:
 >>> async def handle_download(executor, task):
 ...     ...  # your logic here
 
->>> LocalExecutor.register_handler(DownloadTask, handle_download)
+>>> _ = LocalExecutor.register_handler(handle_download, task_type=DownloadTask)
 
 ```
 

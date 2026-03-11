@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import asyncio
 
-from cook.executor import Executor, TaskExecutionError
+from cook.executor import Executor, TaskExecutionError, register_executor
 from cook.task import ShellTask, Task
 
 
+@register_executor("local")
 class LocalExecutor(Executor):
     def __init__(self, max_concurrent: int = 1) -> None:
         super().__init__(max_concurrent)
 
 
+@LocalExecutor.register_handler(task_type=ShellTask)
 async def _handle_shell_task(executor: Executor, task: Task) -> None:
     assert isinstance(task, ShellTask)
     proc = await asyncio.create_subprocess_shell(
@@ -26,6 +28,3 @@ async def _handle_shell_task(executor: Executor, task: Task) -> None:
             returncode=proc.returncode or 1,
             stderr=stderr.decode() if stderr else "",
         )
-
-
-LocalExecutor.register_handler(ShellTask, _handle_shell_task)
