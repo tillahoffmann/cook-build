@@ -14,7 +14,7 @@ from cook.scheduler import (
     BuildError,
     Scheduler,
     TaskOutputError,
-    compute_effective_digest,
+    is_stale,
 )
 from cook.store.sqlite import SqliteBuildStore
 from cook.task import Task
@@ -97,45 +97,6 @@ def _collect_transitive(tasks: list[Task]) -> list[Task]:
     return result
 
 
-def _compute_staleness(
-    task: Task, store: SqliteBuildStore, seen: dict[str, bool]
-) -> bool:
-    """Return True if the task is stale (needs to run)."""
-    if task.name in seen:
-        return seen[task.name]
-
-    # No outputs => always run
-    if not task.outputs:
-        seen[task.name] = True
-        return True
-
-    # Check deps first
-    for dep in task.task_deps:
-        if _compute_staleness(dep, store, seen):
-            seen[task.name] = True
-            return True
-
-    # Check stored digest exists
-    record = store.get(task.task_id)
-    if record is None:
-        seen[task.name] = True
-        return True
-
-    # Check outputs exist
-    if not all(Path(o).resolve().exists() for o in task.outputs):
-        seen[task.name] = True
-        return True
-
-    # Compute effective digest and compare with stored one
-    effective = compute_effective_digest(task, store)
-    if effective is None or effective != record.digest:
-        seen[task.name] = True
-        return True
-
-    seen[task.name] = False
-    return False
-
-
 def _cmd_exec(args: argparse.Namespace) -> int:
     config = load_config()
 
@@ -158,9 +119,8 @@ def _cmd_exec(args: argparse.Namespace) -> int:
             db_path = Path(".cook.db")
             if db_path.exists():
                 with SqliteBuildStore(str(db_path)) as store:
-                    seen: dict[str, bool] = {}
                     for task in all_tasks:
-                        stale = _compute_staleness(task, store, seen)
+                        stale = is_stale(task, store)
                         status = "STALE (would run)" if stale else "up-to-date"
                         print(f"[{task.name}] {status}")
             else:
@@ -193,9 +153,8 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
         db_path = Path(".cook.db")
         if db_path.exists():
             with SqliteBuildStore(str(db_path)) as store:
-                seen: dict[str, bool] = {}
                 for task in all_tasks:
-                    stale = _compute_staleness(task, store, seen)
+                    stale = is_stale(task, store)
                     status = "STALE" if stale else "up-to-date"
                     deps = ", ".join(d.name for d in task.task_deps)
                     dep_str = f" (deps: {deps})" if deps else ""

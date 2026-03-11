@@ -82,6 +82,35 @@ def compute_effective_digest(task: Task, store: BuildStore) -> str | None:
     return h.hexdigest()
 
 
+def is_stale(task: Task, store: BuildStore) -> bool:
+    """Return True if the task needs to run.
+
+    A task is stale if:
+    - it has no outputs (always-run)
+    - any dependency is stale
+    - no stored record exists
+    - any output file is missing
+    - the effective digest doesn't match the stored one
+    """
+    if not task.outputs:
+        return True
+
+    for dep in task.task_deps:
+        if is_stale(dep, store):
+            return True
+
+    effective = compute_effective_digest(task, store)
+    # effective is non-None here: we checked task.outputs above, and all deps
+    # passed staleness checks (meaning they have records with digests).
+    assert effective is not None
+
+    record = store.get(task.task_id)
+    if record is None or record.digest != effective:
+        return True
+
+    return not all(Path(o).resolve().exists() for o in task.outputs)
+
+
 class Scheduler:
     def __init__(
         self,
