@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import asyncio
-import os
 from collections.abc import Generator
 from pathlib import Path
 
@@ -13,6 +11,7 @@ from cook.scheduler import (
     DependencyFailedError,
     Scheduler,
     TaskOutputError,
+    is_stale,
 )
 from cook.store.sqlite import SqliteBuildStore
 from cook.task import ShellTask
@@ -580,3 +579,120 @@ async def test_implicit_file_dep_ordering(
     await sched.run([task_b])
     assert file_a.read_text().strip() == "produced"
     assert file_b.read_text().strip() == "produced"
+
+
+# --- is_stale() unit tests ---
+
+
+def test_is_stale_no_outputs(store: SqliteBuildStore) -> None:
+    """Tasks with no outputs are always stale."""
+    task = ShellTask(name="always", cmd="true")
+    assert is_stale(task, store) is True
+
+
+def test_is_stale_no_record(tmp_path: Path, store: SqliteBuildStore) -> None:
+    """Task with outputs but no store record is stale."""
+    outfile = tmp_path / "out.txt"
+    outfile.write_text("exists")
+    task = ShellTask(name="no-rec", cmd="true", outputs=[str(outfile)])
+    assert is_stale(task, store) is True
+
+
+async def test_is_stale_up_to_date(
+    tmp_path: Path, store: SqliteBuildStore, executor: LocalExecutor
+) -> None:
+    """After a successful build, task is not stale."""
+    infile = tmp_path / "in.txt"
+    infile.write_text("data")
+    outfile = tmp_path / "out.txt"
+    task = ShellTask(
+        name="fresh",
+        cmd=f"cat {infile} > {outfile}",
+        inputs=[str(infile)],
+        outputs=[str(outfile)],
+    )
+    sched = Scheduler(store, executor)
+    await sched.run([task])
+    assert is_stale(task, store) is False
+
+
+async def test_is_stale_after_input_change(
+    tmp_path: Path, store: SqliteBuildStore, executor: LocalExecutor
+) -> None:
+    """Modifying a file input makes the task stale."""
+    infile = tmp_path / "in.txt"
+    infile.write_text("v1")
+    outfile = tmp_path / "out.txt"
+    task = ShellTask(
+        name="input-change",
+        cmd=f"cat {infile} > {outfile}",
+        inputs=[str(infile)],
+        outputs=[str(outfile)],
+    )
+    sched = Scheduler(store, executor)
+    await sched.run([task])
+    assert is_stale(task, store) is False
+
+    infile.write_text("v2")
+    assert is_stale(task, store) is True
+
+
+async def test_is_stale_missing_output(
+    tmp_path: Path, store: SqliteBuildStore, executor: LocalExecutor
+) -> None:
+    """Deleting an output file makes the task stale."""
+    outfile = tmp_path / "out.txt"
+    task = ShellTask(
+        name="del-out",
+        cmd=f"echo ok > {outfile}",
+        outputs=[str(outfile)],
+    )
+    sched = Scheduler(store, executor)
+    await sched.run([task])
+    assert is_stale(task, store) is False
+
+    outfile.unlink()
+    assert is_stale(task, store) is True
+
+
+def test_is_stale_dep_no_outputs(tmp_path: Path, store: SqliteBuildStore) -> None:
+    """A dep with no outputs makes the parent stale (recursive)."""
+    always_run = ShellTask(name="always-dep", cmd="true")
+    outfile = tmp_path / "out.txt"
+    outfile.write_text("exists")
+    task = ShellTask(
+        name="has-dep",
+        cmd="true",
+        inputs=[always_run],
+        outputs=[str(outfile)],
+    )
+    assert is_stale(task, store) is True
+
+
+async def test_is_stale_dep_stale_propagates(
+    tmp_path: Path, store: SqliteBuildStore, executor: LocalExecutor
+) -> None:
+    """If a dep is stale, the dependent task is also stale."""
+    infile = tmp_path / "src.txt"
+    infile.write_text("v1")
+    mid = tmp_path / "mid.txt"
+    final = tmp_path / "final.txt"
+    dep = ShellTask(
+        name="dep-task",
+        cmd=f"cat {infile} > {mid}",
+        inputs=[str(infile)],
+        outputs=[str(mid)],
+    )
+    task = ShellTask(
+        name="main-task",
+        cmd=f"cat {mid} > {final}",
+        inputs=[dep, str(mid)],
+        outputs=[str(final)],
+    )
+    sched = Scheduler(store, executor)
+    await sched.run([task])
+    assert is_stale(task, store) is False
+
+    infile.write_text("v2")
+    assert is_stale(dep, store) is True
+    assert is_stale(task, store) is True

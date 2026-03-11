@@ -166,3 +166,17 @@ def test_validate_resolves_file_deps(ctx: Context) -> None:
     assert compile_task in link_task.task_deps
     # Original inputs list is not modified
     assert compile_task not in link_task.inputs
+
+
+def test_validate_idempotent(ctx: Context) -> None:
+    """Calling validate() twice produces the same result."""
+    compile_task = ctx.sh(name="compile", cmd="cc -c", outputs=["foo.o"])
+    link_task = ctx.sh(name="link", cmd="cc", inputs=["foo.o"], outputs=["app"])
+    ctx.validate()
+    tasks_after_first = dict(ctx.tasks)
+    deps_after_first = list(link_task.task_deps)
+
+    ctx.validate()
+    assert ctx.tasks == tasks_after_first
+    assert list(link_task.task_deps) == deps_after_first
+    assert compile_task in link_task.task_deps

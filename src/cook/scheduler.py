@@ -99,9 +99,10 @@ def is_stale(task: Task, store: BuildStore) -> bool:
             return True
 
     effective = compute_effective_digest(task, store)
-    # effective is non-None here: we checked task.outputs above, and all deps
-    # passed staleness checks (meaning they have records with digests).
-    assert effective is not None
+    if effective is None:
+        # A dependency has no outputs or no stored record despite passing
+        # recursive staleness checks — conservatively treat as stale.
+        return True  # pragma: no cover
 
     record = store.get(task.task_id)
     if record is None or record.digest != effective:

@@ -22,9 +22,9 @@ async def _handle_shell_task(executor: Executor, task: Task) -> None:
         stderr=asyncio.subprocess.PIPE,
     )
     _, stderr = await proc.communicate()
-    if proc.returncode != 0:
+    if proc.returncode:
         raise TaskExecutionError(
             task=task,
-            returncode=proc.returncode or 1,
+            returncode=proc.returncode,
             stderr=stderr.decode() if stderr else "",
         )

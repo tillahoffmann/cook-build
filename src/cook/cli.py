@@ -54,9 +54,7 @@ def _load_recipe(recipe_path: str) -> None:
         raise FileNotFoundError(f"Recipe file not found: {recipe_path}")
 
     recipe_dir = str(path.parent)
-    if sys.path and sys.path[0] != recipe_dir:
-        sys.path.insert(0, recipe_dir)
-    elif not sys.path:
+    if not sys.path or sys.path[0] != recipe_dir:
         sys.path.insert(0, recipe_dir)
 
     spec = importlib.util.spec_from_file_location("__cook_recipe__", str(path))
