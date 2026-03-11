@@ -21,6 +21,12 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
+      - id: doctest
+        name: doctest
+        entry: bash -c 'uv run python -m doctest README.md'
+        language: system
+        files: (README\.md|\.py$)
+        pass_filenames: false
       - id: pytest
         name: pytest
         entry: bash -c 'CI=true uv run pytest -q --cov=src/cook --cov-fail-under=100'

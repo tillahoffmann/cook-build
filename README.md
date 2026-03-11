@@ -80,19 +80,19 @@ ctx.sh(
 Subclass `Task` as a dataclass and register a handler with the executor:
 
 ```python
-from dataclasses import dataclass
-from cook import Task
-from cook.executor import LocalExecutor
+>>> from dataclasses import dataclass
+>>> from cook import Task
+>>> from cook.executor import LocalExecutor
 
-@dataclass
-class DownloadTask(Task):
-    url: str = ""
+>>> @dataclass
+... class DownloadTask(Task):
+...     url: str = ""
 
-async def handle_download(executor, task):
-    # your logic here
-    ...
+>>> async def handle_download(executor, task):
+...     ...  # your logic here
 
-LocalExecutor.register_handler(DownloadTask, handle_download)
+>>> LocalExecutor.register_handler(DownloadTask, handle_download)
+
 ```
 
 ## Configuration
