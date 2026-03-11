@@ -147,17 +147,6 @@ def test_validate_passes_diamond(ctx: Context) -> None:
     ctx.validate()
 
 
-def test_validate_fails_glob_in_name(ctx: Context) -> None:
-    # Belt-and-suspenders: bypass Task.__post_init__ to sneak in a bad name
-    t = Task.__new__(Task)
-    t.name = "bad*name"
-    t.inputs = []
-    t.outputs = []
-    ctx._tasks[t.name] = t
-    with pytest.raises(ValueError, match="glob"):
-        ctx.validate()
-
-
 def test_validate_duplicate_outputs_resolved_paths(
     ctx: Context, tmp_path: Path
 ) -> None:
@@ -167,3 +156,13 @@ def test_validate_duplicate_outputs_resolved_paths(
     ctx.sh(name="b", cmd="echo b", outputs=[abs_path])
     with pytest.raises(ValueError, match="Duplicate output path"):
         ctx.validate()
+
+
+def test_validate_resolves_file_deps(ctx: Context) -> None:
+    """File input matching another task's output creates an implicit dep."""
+    compile_task = ctx.sh(name="compile", cmd="cc -c", outputs=["foo.o"])
+    link_task = ctx.sh(name="link", cmd="cc", inputs=["foo.o"], outputs=["app"])
+    ctx.validate()
+    assert compile_task in link_task.task_deps
+    # Original inputs list is not modified
+    assert compile_task not in link_task.inputs

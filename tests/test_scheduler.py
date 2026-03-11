@@ -555,3 +555,28 @@ async def test_missing_file_input_clear_error(
     sched = Scheduler(store, executor)
     with pytest.raises(FileNotFoundError, match="nonexistent.txt"):
         await sched.run([task])
+
+
+async def test_implicit_file_dep_ordering(
+    tmp_path: Path, store: SqliteBuildStore, executor: LocalExecutor
+) -> None:
+    """Scheduler respects implicit deps populated via _deps (as resolve_file_deps does)."""
+    file_a = tmp_path / "a.txt"
+    file_b = tmp_path / "b.txt"
+    task_a = ShellTask(
+        name="produce",
+        cmd=f"echo produced > {file_a}",
+        outputs=[str(file_a)],
+    )
+    task_b = ShellTask(
+        name="consume",
+        cmd=f"cat {file_a} > {file_b}",
+        inputs=[str(file_a)],
+        outputs=[str(file_b)],
+    )
+    # Simulate what resolve_file_deps does: add implicit dep via _deps
+    task_b._deps.add(task_a)
+    sched = Scheduler(store, executor)
+    await sched.run([task_b])
+    assert file_a.read_text().strip() == "produced"
+    assert file_b.read_text().strip() == "produced"

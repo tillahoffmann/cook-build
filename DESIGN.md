@@ -27,14 +27,24 @@ Users define **custom task types** by subclassing Task as a dataclass and regist
 
 ### Dependencies
 
-Dependencies are expressed by placing Task objects in the `inputs` list alongside file paths:
+Dependencies can be expressed explicitly by placing Task objects in the `inputs` list, or implicitly via file matching — if a task's file input matches another task's declared output, the dependency is resolved automatically during `validate()`.
 
 ```python
-obj = ShellTask(name="compile-foo", cmd="gcc -c foo.c -o foo.o",
-                inputs=["foo.c"], outputs=["foo.o"])
-binary = ShellTask(name="link-foo", cmd="gcc foo.o -o foo",
-                   inputs=[obj, "foo.o"], outputs=["foo"])
+# Explicit: pass the task object in inputs
+obj = ctx.sh(name="compile-foo", cmd="gcc -c foo.c -o foo.o",
+             inputs=["foo.c"], outputs=["foo.o"])
+binary = ctx.sh(name="link-foo", cmd="gcc foo.o -o foo",
+                inputs=[obj, "foo.o"], outputs=["foo"])
+
+# Implicit: file-based resolution (Make-style)
+# Just list file paths — Cook resolves foo.o to the compile task automatically.
+obj = ctx.sh(name="compile-foo", cmd="gcc -c foo.c -o foo.o",
+             inputs=["foo.c"], outputs=["foo.o"])
+binary = ctx.sh(name="link-foo", cmd="gcc foo.o -o foo",
+                inputs=["foo.o"], outputs=["foo"])
 ```
+
+Implicit dependencies are stored internally (in `_deps`) and merged with explicit ones via the `task_deps` property. The original `inputs` list is never modified.
 
 ### Staleness & Effective Digest
 
@@ -95,13 +105,15 @@ The context handles task registration at recipe-load time. It is *not* involved 
 - Also works as a **context manager** (backed by `contextvars`) for test isolation: `with Context() as ctx:` activates a fresh context that is automatically deactivated on exit.
 - **`register(task)`** registers a single task, raises on duplicate names, and returns the task. This allows chaining: `task = ctx.register(MyTask(...))`. To register multiple tasks, call `register()` multiple times.
 - **`sh()`** is a convenience that creates a ShellTask and registers it in one call (returns the task).
-- **`validate()`** is called by the CLI before execution. It checks:
-  - All transitive dependencies are registered
-  - No duplicate task names (enforced at registration time)
-  - No duplicate output paths across tasks (after path resolution)
-  - No task's file inputs overlap with its own outputs (a task cannot read and write the same file)
-  - No cycles in the dependency graph (DFS-based)
-  - No glob characters in task names
+- **`validate()`** is called by the CLI before execution. It runs a pipeline of **graph transforms** (`GraphTransform` protocol in `transform.py`). The default pipeline:
+  1. **`check_deps_registered`** — all transitive dependencies are registered
+  2. **`check_outputs`** — no duplicate output paths across tasks (after path resolution); no task's file inputs overlap with its own outputs
+  3. **`resolve_file_deps`** — if a task's file input matches another task's declared output, an implicit task dependency is added (stored in the internal `_deps` set, not in `inputs`). This enables Make-style file-based dependency resolution.
+  4. **`check_cycles`** — no cycles in the dependency graph (DFS-based)
+
+  Additional invariants enforced elsewhere:
+  - No duplicate task names (enforced at registration time by `register()`)
+  - No glob characters in task names (enforced at construction time by `Task.__post_init__`)
 
 **Recipe usage:**
 
@@ -282,6 +294,7 @@ src/cook/
     __init__.py          Public API: get_context, Task, ShellTask
     task.py              Task, ShellTask dataclasses
     context.py           Context, get_context()
+    transform.py         Graph transform pipeline (validation + file dep resolution)
     scheduler.py         Async DAG scheduler
     executor/
         __init__.py      Executor ABC

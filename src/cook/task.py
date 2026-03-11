@@ -16,14 +16,21 @@ def _validate_name(name: str) -> None:
         )
 
 
-@dataclass
+@dataclass(eq=False)
 class Task:
     name: str
     inputs: list[str | Path | Task] = field(default_factory=list)
     outputs: list[str | Path] = field(default_factory=list)
+    _deps: set[Task] = field(default_factory=set, init=False, repr=False)
 
     def __post_init__(self) -> None:
         _validate_name(self.name)
+
+    def __hash__(self) -> int:
+        return id(self)
+
+    def __eq__(self, other: object) -> bool:
+        return self is other
 
     @property
     def task_id(self) -> str:
@@ -31,7 +38,14 @@ class Task:
 
     @property
     def task_deps(self) -> list[Task]:
-        return [i for i in self.inputs if isinstance(i, Task)]
+        explicit = [i for i in self.inputs if isinstance(i, Task)]
+        seen = {t.name for t in explicit}
+        merged = list(explicit)
+        for d in sorted(self._deps, key=lambda t: t.name):
+            if d.name not in seen:
+                merged.append(d)
+                seen.add(d.name)
+        return merged
 
     @property
     def file_inputs(self) -> list[str | Path]:
@@ -50,13 +64,15 @@ class Task:
             value = getattr(self, f.name)
             if f.name == "inputs":
                 value = [str(v) for v in value if not isinstance(v, Task)]
+            elif f.name == "_deps":
+                continue
             elif isinstance(value, list):
                 value = [str(v) for v in value]
             h.update(f"{f.name}:{json.dumps(value, sort_keys=True)}".encode())
         return h.hexdigest()
 
 
-@dataclass
+@dataclass(eq=False)
 class ShellTask(Task):
     cmd: str = ""
     env: dict[str, str] | None = None

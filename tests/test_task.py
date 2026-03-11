@@ -90,6 +90,42 @@ def test_digest_str_vs_path_equivalent() -> None:
     assert t1.digest() == t2.digest()
 
 
+def test_deps_included_in_task_deps() -> None:
+    a = Task(name="a")
+    b = Task(name="b")
+    b._deps.add(a)
+    assert a in b.task_deps
+
+
+def test_deps_merged_with_explicit_inputs() -> None:
+    a = Task(name="a")
+    b = Task(name="b")
+    c = Task(name="c", inputs=[a])
+    c._deps.add(b)
+    assert a in c.task_deps
+    assert b in c.task_deps
+
+
+def test_deps_deduped_with_inputs() -> None:
+    a = Task(name="a")
+    b = Task(name="b", inputs=[a])
+    b._deps.add(a)
+    assert b.task_deps == [a]
+
+
+def test_digest_ignores_deps() -> None:
+    a = Task(name="other")
+    t1 = Task(name="x")
+    t2 = Task(name="x")
+    t2._deps.add(a)
+    assert t1.digest() == t2.digest()
+
+
+def test_deps_default_empty() -> None:
+    t = Task(name="a")
+    assert t._deps == set()
+
+
 def test_shelltask_inherits_task() -> None:
     t = ShellTask(name="sh")
     assert isinstance(t, Task)
@@ -172,10 +208,23 @@ def test_shelltask_name_validation() -> None:
         ShellTask(name="bad*name", cmd="echo hi")
 
 
-def test_task_not_frozen() -> None:
+def test_task_identity_equality() -> None:
     t = Task(name="a")
-    t.name = "b"
-    assert t.name == "b"
+    assert t == t
+    assert hash(t) == hash(t)
+
+
+def test_task_distinct_objects_not_equal() -> None:
+    t1 = Task(name="a")
+    t2 = Task(name="a")
+    assert t1 != t2
+
+
+def test_task_usable_in_set() -> None:
+    t1 = Task(name="a")
+    t2 = Task(name="b")
+    s = {t1, t2, t1}
+    assert len(s) == 2
 
 
 def test_shelltask_digest_includes_class_name() -> None:

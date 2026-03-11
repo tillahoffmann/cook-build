@@ -166,16 +166,16 @@ class Scheduler:
     async def _run_task(self, task: Task) -> None:
         # 1. Ensure all dependencies (always return_exceptions to avoid
         #    cancelling in-flight subprocesses)
+        deps = task.task_deps
         dep_failed = False
-        if task.task_deps:
+        if deps:
             results = await asyncio.gather(
-                *(self._ensure(dep) for dep in task.task_deps),
+                *(self._ensure(dep) for dep in deps),
                 return_exceptions=True,
             )
             for i, r in enumerate(results):
                 if isinstance(r, Exception):
-                    dep = task.task_deps[i]
-                    self._failed.add(dep.task_id)
+                    self._failed.add(deps[i].task_id)
                     dep_failed = True
                     if not any(r is e for e in self._errors):
                         self._errors.append(r)
@@ -183,9 +183,7 @@ class Scheduler:
         # 2. Check for failed dependencies
         if dep_failed:
             if self._keep_going:
-                failed_dep = next(
-                    d for d in task.task_deps if d.task_id in self._failed
-                )
+                failed_dep = next(d for d in deps if d.task_id in self._failed)
                 self._failed.add(task.task_id)
                 err = DependencyFailedError(task, failed_dep.task_id)
                 self._errors.append(err)
