@@ -312,7 +312,41 @@ def test_no_subcommand(capsys: pytest.CaptureFixture[str]) -> None:
     assert rc == 1
 
 
-def test_unknown_executor(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_jobs_flag(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    outfile = project / "out.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="t", cmd="echo ok > {outfile}", outputs=["{outfile}"])
+        """,
+    )
+    rc = main(["exec", "-j", "2", "t"])
+    assert rc == 0
+    assert outfile.exists()
+
+
+def test_dry_run_short_flag(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    outfile = project / "out.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="build", cmd="echo x > {outfile}", outputs=["{outfile}"])
+        """,
+    )
+    rc = main(["exec", "-n", "build"])
+    assert rc == 0
+    captured = capsys.readouterr().out
+    assert "STALE (would run)" in captured
+    assert not outfile.exists()
+
+
+def test_unknown_executor_flag(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     _write_recipe(
         project,
         """\
@@ -323,8 +357,24 @@ def test_unknown_executor(project: Path, capsys: pytest.CaptureFixture[str]) -> 
     )
     rc = main(["exec", "--executor", "slurm", "t"])
     assert rc == 1
-    captured = capsys.readouterr().out
-    assert "unknown executor" in captured.lower()
+    assert "unknown executor" in capsys.readouterr().out.lower()
+
+
+def test_unknown_executor_config(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (project / "cook.toml").write_text('[cook]\nexecutor = "slurm"\n')
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="t", cmd="true", outputs=[])
+        """,
+    )
+    rc = main(["exec", "t"])
+    assert rc == 1
+    assert "unknown executor" in capsys.readouterr().out.lower()
 
 
 def test_exec_with_dependencies(

@@ -26,11 +26,16 @@ def _build_parser() -> argparse.ArgumentParser:
 
     exec_p = sub.add_parser("exec", help="Run tasks matching a pattern")
     exec_p.add_argument("pattern", nargs="?", default=None)
-    exec_p.add_argument("--dry-run", action="store_true", help="Show what would run")
+    exec_p.add_argument(
+        "-n", "--dry-run", action="store_true", help="Show what would run"
+    )
     exec_p.add_argument(
         "-k", "--keep-going", action="store_true", help="Continue on failure"
     )
-    exec_p.add_argument("--executor", default=None, help="Override executor")
+    exec_p.add_argument(
+        "-j", "--jobs", type=int, default=None, help="Number of parallel jobs"
+    )
+    exec_p.add_argument("--executor", default=None, help="Override executor backend")
 
     inspect_p = sub.add_parser("inspect", help="Show dependency graph and staleness")
     inspect_p.add_argument("pattern", nargs="?", default=None)
@@ -100,8 +105,9 @@ def _collect_transitive(tasks: list[Task]) -> list[Task]:
 def _cmd_exec(args: argparse.Namespace) -> int:
     config = load_config()
 
-    if args.executor is not None and args.executor != "local":
-        print(f"Error: unknown executor {args.executor!r}. Only 'local' is supported.")
+    executor_name = args.executor if args.executor is not None else config.executor
+    if executor_name != "local":
+        print(f"Error: unknown executor {executor_name!r}. Only 'local' is supported.")
         return 1
 
     with Context() as ctx:
@@ -128,7 +134,10 @@ def _cmd_exec(args: argparse.Namespace) -> int:
                     print(f"[{task.name}] STALE (would run)")
             return 0
 
-        executor = LocalExecutor(max_concurrent=config.local_max_concurrent)
+        max_concurrent = (
+            args.jobs if args.jobs is not None else config.local_max_concurrent
+        )
+        executor = LocalExecutor(max_concurrent=max_concurrent)
         with SqliteBuildStore(".cook.db") as store:
             scheduler = Scheduler(store, executor, keep_going=args.keep_going)
             asyncio.run(scheduler.run(targets))

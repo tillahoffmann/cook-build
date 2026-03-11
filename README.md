@@ -40,8 +40,9 @@ On the second run, unchanged tasks are skipped automatically.
 
 ```bash
 cook exec [pattern]              # run tasks matching glob pattern
-cook exec --dry-run [pattern]    # show what would run
-cook exec -k [pattern]           # keep going on failure
+cook exec -n [pattern]           # show what would run (--dry-run)
+cook exec -k [pattern]           # keep going on failure (--keep-going)
+cook exec -j4 [pattern]          # run up to 4 tasks in parallel (--jobs)
 cook inspect [pattern]           # show dependency graph and staleness
 cook invalidate <pattern>        # force tasks to re-run next time
 ```
