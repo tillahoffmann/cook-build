@@ -60,7 +60,11 @@ def load_config(path: Path | None = None) -> Config:
         config.default = val
 
     local = cook.get("local", {})
-    if isinstance(local, dict):
+    if not isinstance(local, dict):
+        raise ConfigError(
+            f"Expected [cook.local] to be a table, got {type(local).__name__}"
+        )
+    if local:
         if "max_concurrent" in local:
             val = local["max_concurrent"]
             if not isinstance(val, int) or isinstance(val, bool):

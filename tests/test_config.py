@@ -146,3 +146,10 @@ def test_load_config_cook_not_a_table(tmp_path: Path):
     p.write_text('cook = "not a table"\n')
     with pytest.raises(ConfigError, match="Expected \\[cook\\] to be a table"):
         load_config(p)
+
+
+def test_load_config_local_not_a_table(tmp_path: Path):
+    p = tmp_path / "cook.toml"
+    p.write_text('[cook]\nlocal = "not a table"\n')
+    with pytest.raises(ConfigError, match="Expected \\[cook.local\\] to be a table"):
+        load_config(p)
