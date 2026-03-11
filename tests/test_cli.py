@@ -360,6 +360,20 @@ def test_unknown_executor_flag(
     assert "unknown executor" in capsys.readouterr().out.lower()
 
 
+def test_executor_short_flag(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="t", cmd="true", outputs=[])
+        """,
+    )
+    rc = main(["exec", "-x", "slurm", "t"])
+    assert rc == 1
+    assert "unknown executor" in capsys.readouterr().out.lower()
+
+
 def test_unknown_executor_config(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

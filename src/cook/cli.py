@@ -35,7 +35,9 @@ def _build_parser() -> argparse.ArgumentParser:
     exec_p.add_argument(
         "-j", "--jobs", type=int, default=None, help="Number of parallel jobs"
     )
-    exec_p.add_argument("--executor", default=None, help="Override executor backend")
+    exec_p.add_argument(
+        "-x", "--executor", default=None, help="Override executor backend"
+    )
 
     inspect_p = sub.add_parser("inspect", help="Show dependency graph and staleness")
     inspect_p.add_argument("pattern", nargs="?", default=None)

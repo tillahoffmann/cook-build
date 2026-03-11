@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from contextvars import ContextVar, Token
 from pathlib import Path
 from typing import Self
@@ -33,16 +34,16 @@ class Context:
         name: str,
         cmd: str,
         *,
-        inputs: list[str | Path | Task] | None = None,
-        outputs: list[str | Path] | None = None,
+        inputs: Sequence[str | Path | Task] | None = None,
+        outputs: Sequence[str | Path] | None = None,
         env: dict[str, str] | None = None,
         cwd: str | None = None,
     ) -> ShellTask:
         task = ShellTask(
             name=name,
             cmd=cmd,
-            inputs=inputs if inputs is not None else [],
-            outputs=outputs if outputs is not None else [],
+            inputs=list(inputs) if inputs is not None else [],
+            outputs=list(outputs) if outputs is not None else [],
             env=env,
             cwd=cwd,
         )
