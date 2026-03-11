@@ -83,6 +83,13 @@ def test_digest_affected_by_input_order() -> None:
     assert t1.digest() != t2.digest()
 
 
+def test_digest_str_vs_path_equivalent() -> None:
+    """str and Path inputs should produce the same digest."""
+    t1 = Task(name="a", inputs=["foo.c"], outputs=["foo.o"])
+    t2 = Task(name="a", inputs=[Path("foo.c")], outputs=[Path("foo.o")])
+    assert t1.digest() == t2.digest()
+
+
 def test_shelltask_inherits_task() -> None:
     t = ShellTask(name="sh")
     assert isinstance(t, Task)

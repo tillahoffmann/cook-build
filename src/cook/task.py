@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
@@ -39,21 +40,19 @@ class Task:
     def digest(self) -> str:
         """Return SHA-256 hex digest of this task's own identity.
 
-        Serialization strategy: for each dataclass field, we append
-        "field_name:repr(value)" to the hash. Task objects in `inputs`
-        are filtered out (the scheduler handles those via effective digest).
-        Dict-typed fields are sorted by key before repr.
+        Uses JSON serialization for deterministic output. Path objects
+        are normalized to strings so str("foo") and Path("foo") produce
+        the same digest. Task objects in inputs are filtered out.
         """
         h = hashlib.sha256()
         h.update(type(self).__name__.encode())
         for f in fields(self):
             value = getattr(self, f.name)
             if f.name == "inputs":
-                # Filter out Task objects — only hash file inputs
-                value = [v for v in value if not isinstance(v, Task)]
-            if isinstance(value, dict):
-                value = sorted(value.items())
-            h.update(f"{f.name}:{value!r}".encode())
+                value = [str(v) for v in value if not isinstance(v, Task)]
+            elif isinstance(value, list):
+                value = [str(v) for v in value]
+            h.update(f"{f.name}:{json.dumps(value, sort_keys=True)}".encode())
         return h.hexdigest()
 
 
