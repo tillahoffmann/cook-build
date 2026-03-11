@@ -9,7 +9,6 @@ from cook.task import ShellTask, Task
 class LocalExecutor(Executor):
     def __init__(self, max_concurrent: int = 4) -> None:
         super().__init__(max_concurrent)
-        self.register_handler(ShellTask, _handle_shell_task)
 
 
 async def _handle_shell_task(executor: Executor, task: Task) -> None:
@@ -28,3 +27,6 @@ async def _handle_shell_task(executor: Executor, task: Task) -> None:
             returncode=proc.returncode or 1,
             stderr=stderr.decode(),
         )
+
+
+LocalExecutor.register_handler(ShellTask, _handle_shell_task)

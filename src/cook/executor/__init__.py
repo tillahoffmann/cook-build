@@ -19,18 +19,23 @@ class TaskExecutionError(Exception):
 
 
 class Executor(ABC):
+    _handlers: dict[type[Task], Callable[[Executor, Task], Awaitable[None]]] = {}
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        # Each subclass gets its own copy of the parent's handlers
+        cls._handlers = dict(cls._handlers)
+
     def __init__(self, max_concurrent: int) -> None:
         self._semaphore = asyncio.Semaphore(max_concurrent)
-        self._handlers: dict[
-            type[Task], Callable[[Executor, Task], Awaitable[None]]
-        ] = {}
 
+    @classmethod
     def register_handler(
-        self,
+        cls,
         task_type: type[Task],
         handler: Callable[[Executor, Task], Awaitable[None]],
     ) -> None:
-        self._handlers[task_type] = handler
+        cls._handlers[task_type] = handler
 
     def _resolve_handler(
         self, task_type: type[Task]

@@ -50,7 +50,7 @@ async def test_semaphore_limits_concurrency() -> None:
     running = 0
     peak = 0
 
-    original_handler = executor._handlers[ShellTask]
+    original_handler = LocalExecutor._handlers[ShellTask]
 
     async def tracking_handler(ex: Executor, task: Task) -> None:
         nonlocal running, peak
@@ -59,11 +59,13 @@ async def test_semaphore_limits_concurrency() -> None:
         await asyncio.sleep(0.05)
         running -= 1
 
-    executor.register_handler(ShellTask, tracking_handler)
-
-    tasks = [ShellTask(name=f"t{i}", cmd="true") for i in range(max_concurrent + 1)]
-    await asyncio.gather(*(executor.execute(t) for t in tasks))
-    assert peak <= max_concurrent
+    LocalExecutor.register_handler(ShellTask, tracking_handler)
+    try:
+        tasks = [ShellTask(name=f"t{i}", cmd="true") for i in range(max_concurrent + 1)]
+        await asyncio.gather(*(executor.execute(t) for t in tasks))
+        assert peak <= max_concurrent
+    finally:
+        LocalExecutor.register_handler(ShellTask, original_handler)
 
 
 async def test_mro_handler_resolution() -> None:
@@ -100,10 +102,13 @@ async def test_custom_handler() -> None:
         called_with.append(task.value)
 
     executor = LocalExecutor()
-    executor.register_handler(CustomTask, handle_custom)
-    task = CustomTask(name="custom", value="hello")
-    await executor.execute(task)
-    assert called_with == ["hello"]
+    LocalExecutor.register_handler(CustomTask, handle_custom)
+    try:
+        task = CustomTask(name="custom", value="hello")
+        await executor.execute(task)
+        assert called_with == ["hello"]
+    finally:
+        del LocalExecutor._handlers[CustomTask]
 
 
 async def test_env_none_inherits_parent() -> None:
