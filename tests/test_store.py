@@ -28,7 +28,6 @@ def test_save_and_get_roundtrip(store: SqliteBuildStore) -> None:
         last_started=now,
         last_succeeded=now,
         last_failed=None,
-        duration=1.5,
         error=None,
     )
     store.save(record)
@@ -39,7 +38,7 @@ def test_save_and_get_roundtrip(store: SqliteBuildStore) -> None:
     assert got.last_started == now
     assert got.last_succeeded == now
     assert got.last_failed is None
-    assert got.duration == 1.5
+    assert got.duration == 0.0
     assert got.error is None
 
 
@@ -51,24 +50,22 @@ def test_save_all_fields(store: SqliteBuildStore) -> None:
         last_started=now,
         last_succeeded=now,
         last_failed=now,
-        duration=3.14,
         error="something broke",
     )
     store.save(record)
     got = store.get("full")
     assert got is not None
     assert got.last_failed == now
-    assert got.duration == 3.14
+    assert got.duration == 0.0
     assert got.error == "something broke"
 
 
 def test_save_upserts(store: SqliteBuildStore) -> None:
     store.save(TaskRecord(task_id="t", digest="v1"))
-    store.save(TaskRecord(task_id="t", digest="v2", duration=2.0))
+    store.save(TaskRecord(task_id="t", digest="v2"))
     got = store.get("t")
     assert got is not None
     assert got.digest == "v2"
-    assert got.duration == 2.0
 
 
 def test_delete_removes_record(store: SqliteBuildStore) -> None:
@@ -120,7 +117,6 @@ def test_save_preserves_timing_fields_with_coalesce(store: SqliteBuildStore) -> 
             digest="d1",
             last_started=failed_at,
             last_failed=failed_at,
-            duration=1.0,
             error="boom",
         )
     )
@@ -133,7 +129,6 @@ def test_save_preserves_timing_fields_with_coalesce(store: SqliteBuildStore) -> 
             last_started=succeeded_at,
             last_succeeded=succeeded_at,
             last_failed=None,
-            duration=2.0,
         )
     )
 
@@ -144,6 +139,28 @@ def test_save_preserves_timing_fields_with_coalesce(store: SqliteBuildStore) -> 
     assert got.last_succeeded == succeeded_at
     # last_failed should be preserved from the earlier save, not overwritten with None
     assert got.last_failed == failed_at
+
+
+def test_duration_derived_from_timestamps() -> None:
+    start = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    end = datetime(2025, 1, 1, 12, 0, 5, tzinfo=timezone.utc)
+    record = TaskRecord(task_id="t", digest="d", last_started=start, last_succeeded=end)
+    assert record.duration == 5.0
+
+    failed_record = TaskRecord(
+        task_id="t", digest="d", last_started=start, last_failed=end
+    )
+    assert failed_record.duration == 5.0
+
+
+def test_duration_none_without_timestamps() -> None:
+    assert TaskRecord(task_id="t", digest="d").duration is None
+    assert (
+        TaskRecord(
+            task_id="t", digest="d", last_started=datetime.now(timezone.utc)
+        ).duration
+        is None
+    )
 
 
 def test_build_store_is_abc() -> None:

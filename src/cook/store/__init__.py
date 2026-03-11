@@ -12,8 +12,16 @@ class TaskRecord:
     last_started: datetime | None = None
     last_succeeded: datetime | None = None
     last_failed: datetime | None = None
-    duration: float | None = None
     error: str | None = None
+
+    @property
+    def duration(self) -> float | None:
+        if self.last_started is None:
+            return None
+        end = self.last_succeeded or self.last_failed
+        if end is None:
+            return None
+        return (end - self.last_started).total_seconds()
 
 
 class BuildStore(ABC):

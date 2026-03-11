@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -203,12 +202,12 @@ class Scheduler:
 
         # 5. Execute
         print(f"[{task.name}] started")
-        start = time.monotonic()
         started_at = datetime.now(timezone.utc)
         try:
             await self._executor.execute(task)
         except Exception as exc:
-            elapsed = time.monotonic() - start
+            failed_at = datetime.now(timezone.utc)
+            elapsed = (failed_at - started_at).total_seconds()
             print(f"[{task.name}] FAILED ({elapsed:.1f}s)")
             print(f"    {exc}")
             self._failed.add(task.task_id)
@@ -217,14 +216,14 @@ class Scheduler:
                     task_id=task.task_id,
                     digest=effective or "",
                     last_started=started_at,
-                    last_failed=datetime.now(timezone.utc),
-                    duration=elapsed,
+                    last_failed=failed_at,
                     error=str(exc),
                 )
             )
             raise
 
-        elapsed = time.monotonic() - start
+        finished_at = datetime.now(timezone.utc)
+        elapsed = (finished_at - started_at).total_seconds()
 
         # 6. Verify outputs exist
         if task.outputs:
@@ -243,8 +242,7 @@ class Scheduler:
                         task_id=task.task_id,
                         digest=effective or "",
                         last_started=started_at,
-                        last_failed=datetime.now(timezone.utc),
-                        duration=elapsed,
+                        last_failed=finished_at,
                         error=str(err),
                     )
                 )
@@ -259,8 +257,7 @@ class Scheduler:
                     task_id=task.task_id,
                     digest=effective,
                     last_started=started_at,
-                    last_succeeded=datetime.now(timezone.utc),
-                    duration=elapsed,
+                    last_succeeded=finished_at,
                 )
             )
 

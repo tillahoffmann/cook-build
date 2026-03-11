@@ -23,7 +23,6 @@ class SqliteBuildStore(BuildStore):
                 last_started TEXT,
                 last_succeeded TEXT,
                 last_failed TEXT,
-                duration REAL,
                 error TEXT
             )
             """
@@ -33,7 +32,7 @@ class SqliteBuildStore(BuildStore):
     def get(self, task_id: str) -> TaskRecord | None:
         row = self._conn.execute(
             "SELECT task_id, digest, last_started, last_succeeded, last_failed, "
-            "duration, error FROM tasks WHERE task_id = ?",
+            "error FROM tasks WHERE task_id = ?",
             (task_id,),
         ).fetchone()
         if row is None:
@@ -44,22 +43,20 @@ class SqliteBuildStore(BuildStore):
             last_started=_parse_dt(row[2]),
             last_succeeded=_parse_dt(row[3]),
             last_failed=_parse_dt(row[4]),
-            duration=row[5],
-            error=row[6],
+            error=row[5],
         )
 
     def save(self, record: TaskRecord) -> None:
         self._conn.execute(
             """
             INSERT INTO tasks (task_id, digest, last_started, last_succeeded,
-                               last_failed, duration, error)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                               last_failed, error)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(task_id) DO UPDATE SET
                 digest=excluded.digest,
                 last_started=COALESCE(excluded.last_started, tasks.last_started),
                 last_succeeded=COALESCE(excluded.last_succeeded, tasks.last_succeeded),
                 last_failed=COALESCE(excluded.last_failed, tasks.last_failed),
-                duration=excluded.duration,
                 error=excluded.error
             """,
             (
@@ -68,7 +65,6 @@ class SqliteBuildStore(BuildStore):
                 _format_dt(record.last_started),
                 _format_dt(record.last_succeeded),
                 _format_dt(record.last_failed),
-                record.duration,
                 record.error,
             ),
         )
