@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from .config import ConfigError, load_config
-from .context import Context, get_context
+from .context import Context
 from .executor import TaskExecutionError, get_executor
 from .scheduler import (
     BuildError,

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 import textwrap
@@ -624,7 +623,6 @@ def test_load_recipe_empty_sys_path(
 
 def test_main_module_block() -> None:
     """Cover the if __name__ == '__main__' block via runpy."""
-    import subprocess
 
     result = subprocess.run(
         [sys.executable, "-m", "cook.cli"],

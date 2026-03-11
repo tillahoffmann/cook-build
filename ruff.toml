@@ -1,2 +1,5 @@
 [lint]
-select = ["I"]
+extend-select = ["I"]
+
+[lint.per-file-ignores]
+"src/cook/executor/__init__.py" = ["E402"]

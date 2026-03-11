@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
-import time
 from dataclasses import dataclass
 
 import pytest
@@ -113,7 +111,6 @@ async def test_custom_handler() -> None:
 
 async def test_env_none_inherits_parent() -> None:
     executor = LocalExecutor()
-    home = os.environ.get("HOME", os.environ.get("USER", ""))
     task = ShellTask(name="env-inherit", cmd="echo $HOME", env=None)
     # Should not raise -- inherits env and can run
     await executor.execute(task)
