@@ -100,7 +100,3 @@ def main(argv: list[str] | None = None) -> int:
     ) as e:
         print(f"Error: {e}")
         return 1
-
-
-if __name__ == "__main__":  # pragma: no cover
-    raise SystemExit(main())

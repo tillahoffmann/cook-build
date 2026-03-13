@@ -253,7 +253,7 @@ def test_inspect_with_store(project: Path, capsys: pytest.CaptureFixture[str]) -
     assert "up-to-date" in captured
 
 
-def testformat_relative_time() -> None:
+def test_format_relative_time() -> None:
     from datetime import datetime, timedelta, timezone
 
     from cook.cli.util import format_relative_time
@@ -812,7 +812,7 @@ def test_dry_run_staleness_cache(
     assert "[shared] STALE (would run)" in captured
 
 
-def testload_recipe_empty_sys_path(
+def test_load_recipe_empty_sys_path(
     project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Cover the empty sys.path branch."""
@@ -846,7 +846,7 @@ def test_main_module_block() -> None:
     assert result.returncode == 1
 
 
-def testload_recipe_spec_none(
+def test_load_recipe_spec_none(
     project: Path,
 ) -> None:
     """Cover the spec is None branch."""
