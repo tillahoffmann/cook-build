@@ -15,6 +15,10 @@ class Config:
     executor: str = "local"
     default: str | None = None
     local_max_concurrent: int = 1
+    slurm_max_concurrent: int = 64
+    slurm_poll_interval: float = 2.0
+    slurm_poll_timeout: float = 86400.0
+    slurm_poll_retries: int = 10
 
 
 def load_config(path: Path | None = None) -> Config:
@@ -74,5 +78,51 @@ def load_config(path: Path | None = None) -> Config:
             if val < 1:
                 raise ConfigError(f"'local.max_concurrent' must be >= 1, got {val}")
             config.local_max_concurrent = val
+
+    slurm = cook.get("slurm", {})
+    if not isinstance(slurm, dict):
+        raise ConfigError(
+            f"Expected [cook.slurm] to be a table, got {type(slurm).__name__}"
+        )
+    if slurm:
+        if "max_concurrent" in slurm:
+            val = slurm["max_concurrent"]
+            if not isinstance(val, int) or isinstance(val, bool):
+                raise ConfigError(
+                    f"Expected 'slurm.max_concurrent' to be an integer, got {type(val).__name__}"
+                )
+            if val < 1:
+                raise ConfigError(f"'slurm.max_concurrent' must be >= 1, got {val}")
+            config.slurm_max_concurrent = val
+
+        if "poll_interval" in slurm:
+            val = slurm["poll_interval"]
+            if not isinstance(val, (int, float)) or isinstance(val, bool):
+                raise ConfigError(
+                    f"Expected 'slurm.poll_interval' to be a number, got {type(val).__name__}"
+                )
+            if val <= 0:
+                raise ConfigError(f"'slurm.poll_interval' must be > 0, got {val}")
+            config.slurm_poll_interval = float(val)
+
+        if "poll_timeout" in slurm:
+            val = slurm["poll_timeout"]
+            if not isinstance(val, (int, float)) or isinstance(val, bool):
+                raise ConfigError(
+                    f"Expected 'slurm.poll_timeout' to be a number, got {type(val).__name__}"
+                )
+            if val <= 0:
+                raise ConfigError(f"'slurm.poll_timeout' must be > 0, got {val}")
+            config.slurm_poll_timeout = float(val)
+
+        if "poll_retries" in slurm:
+            val = slurm["poll_retries"]
+            if not isinstance(val, int) or isinstance(val, bool):
+                raise ConfigError(
+                    f"Expected 'slurm.poll_retries' to be an integer, got {type(val).__name__}"
+                )
+            if val < 1:
+                raise ConfigError(f"'slurm.poll_retries' must be >= 1, got {val}")
+            config.slurm_poll_retries = val
 
     return config

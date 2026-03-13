@@ -101,10 +101,12 @@ def get_executor(name: str) -> type[Executor]:
 
 
 from .local import LocalExecutor
+from .slurm import SlurmExecutor
 
 __all__ = [
     "Executor",
     "LocalExecutor",
+    "SlurmExecutor",
     "TaskExecutionError",
     "get_executor",
     "register_executor",

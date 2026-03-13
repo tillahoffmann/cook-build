@@ -153,3 +153,111 @@ def test_load_config_local_not_a_table(tmp_path: Path):
     p.write_text('[cook]\nlocal = "not a table"\n')
     with pytest.raises(ConfigError, match="Expected \\[cook.local\\] to be a table"):
         load_config(p)
+
+
+def test_config_slurm_defaults():
+    c = Config()
+    assert c.slurm_max_concurrent == 64
+    assert c.slurm_poll_interval == 2.0
+    assert c.slurm_poll_timeout == 86400.0
+    assert c.slurm_poll_retries == 10
+
+
+def test_load_config_slurm_all_fields(tmp_path: Path):
+    p = tmp_path / "cook.toml"
+    p.write_text("[cook.slurm]\nmax_concurrent = 32\npoll_interval = 5.0\n")
+    result = load_config(p)
+    assert result.slurm_max_concurrent == 32
+    assert result.slurm_poll_interval == 5.0
+
+
+def test_load_config_slurm_poll_interval_int(tmp_path: Path):
+    p = tmp_path / "cook.toml"
+    p.write_text("[cook.slurm]\npoll_interval = 3\n")
+    result = load_config(p)
+    assert result.slurm_poll_interval == 3.0
+
+
+def test_load_config_slurm_not_a_table(tmp_path: Path):
+    p = tmp_path / "cook.toml"
+    p.write_text('[cook]\nslurm = "not a table"\n')
+    with pytest.raises(ConfigError, match="Expected \\[cook.slurm\\] to be a table"):
+        load_config(p)
+
+
+def test_load_config_slurm_max_concurrent_invalid_type(tmp_path: Path):
+    p = tmp_path / "cook.toml"
+    p.write_text("[cook.slurm]\nmax_concurrent = true\n")
+    with pytest.raises(
+        ConfigError, match="Expected 'slurm.max_concurrent' to be an integer"
+    ):
+        load_config(p)
+
+
+def test_load_config_slurm_max_concurrent_too_low(tmp_path: Path):
+    p = tmp_path / "cook.toml"
+    p.write_text("[cook.slurm]\nmax_concurrent = 0\n")
+    with pytest.raises(ConfigError, match="must be >= 1"):
+        load_config(p)
+
+
+def test_load_config_slurm_poll_interval_invalid_type(tmp_path: Path):
+    p = tmp_path / "cook.toml"
+    p.write_text("[cook.slurm]\npoll_interval = true\n")
+    with pytest.raises(
+        ConfigError, match="Expected 'slurm.poll_interval' to be a number"
+    ):
+        load_config(p)
+
+
+def test_load_config_slurm_poll_interval_too_low(tmp_path: Path):
+    p = tmp_path / "cook.toml"
+    p.write_text("[cook.slurm]\npoll_interval = 0\n")
+    with pytest.raises(ConfigError, match="must be > 0"):
+        load_config(p)
+
+
+def test_load_config_slurm_poll_timeout(tmp_path: Path):
+    p = tmp_path / "cook.toml"
+    p.write_text("[cook.slurm]\npoll_timeout = 3600\n")
+    result = load_config(p)
+    assert result.slurm_poll_timeout == 3600.0
+
+
+def test_load_config_slurm_poll_timeout_invalid_type(tmp_path: Path):
+    p = tmp_path / "cook.toml"
+    p.write_text("[cook.slurm]\npoll_timeout = true\n")
+    with pytest.raises(
+        ConfigError, match="Expected 'slurm.poll_timeout' to be a number"
+    ):
+        load_config(p)
+
+
+def test_load_config_slurm_poll_timeout_too_low(tmp_path: Path):
+    p = tmp_path / "cook.toml"
+    p.write_text("[cook.slurm]\npoll_timeout = 0\n")
+    with pytest.raises(ConfigError, match="must be > 0"):
+        load_config(p)
+
+
+def test_load_config_slurm_poll_retries(tmp_path: Path):
+    p = tmp_path / "cook.toml"
+    p.write_text("[cook.slurm]\npoll_retries = 5\n")
+    result = load_config(p)
+    assert result.slurm_poll_retries == 5
+
+
+def test_load_config_slurm_poll_retries_invalid_type(tmp_path: Path):
+    p = tmp_path / "cook.toml"
+    p.write_text("[cook.slurm]\npoll_retries = true\n")
+    with pytest.raises(
+        ConfigError, match="Expected 'slurm.poll_retries' to be an integer"
+    ):
+        load_config(p)
+
+
+def test_load_config_slurm_poll_retries_too_low(tmp_path: Path):
+    p = tmp_path / "cook.toml"
+    p.write_text("[cook.slurm]\npoll_retries = 0\n")
+    with pytest.raises(ConfigError, match="must be >= 1"):
+        load_config(p)

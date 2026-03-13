@@ -152,7 +152,7 @@ Users extend the system by registering handlers for their custom task types — 
 **Built-in executors:**
 
 - **LocalExecutor** — runs shell commands via `asyncio.create_subprocess_shell`.
-- **SlurmExecutor** — deferred to post-MVP. Will submit jobs via `sbatch` and async-poll for completion.
+- **SlurmExecutor** — submits jobs via `sbatch --wrap`, polls completion via `scontrol show job`, reads stderr from output files. Supports `--chdir`, `--export` for env, and `scancel` on cancellation/timeout.
 
 ### Scheduler
 
@@ -332,7 +332,6 @@ src/cook/
 ## Open Questions / Future Work
 
 - **`cook build <file>`** — address tasks by output path. Deferred.
-- **SlurmExecutor** — pluggable executor for Slurm cluster dispatch. Deferred to post-MVP; architecture supports it via handler registry.
 - **Multi-repo** — cross-repo deps. Deferred; monorepo for now.
 - **Watch mode** — not needed currently.
 - **Artifact caching** — not planned; skip-or-rebuild is sufficient.

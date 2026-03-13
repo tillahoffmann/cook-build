@@ -354,7 +354,7 @@ def test_unknown_executor_flag(
         ctx.sh(name="t", cmd="true", outputs=[])
         """,
     )
-    rc = main(["exec", "--executor", "slurm", "t"])
+    rc = main(["exec", "--executor", "nosuch", "t"])
     assert rc == 1
     assert "unknown executor" in capsys.readouterr().out.lower()
 
@@ -368,7 +368,7 @@ def test_executor_short_flag(project: Path, capsys: pytest.CaptureFixture[str]) 
         ctx.sh(name="t", cmd="true", outputs=[])
         """,
     )
-    rc = main(["exec", "-x", "slurm", "t"])
+    rc = main(["exec", "-x", "nosuch", "t"])
     assert rc == 1
     assert "unknown executor" in capsys.readouterr().out.lower()
 
@@ -376,7 +376,7 @@ def test_executor_short_flag(project: Path, capsys: pytest.CaptureFixture[str]) 
 def test_unknown_executor_config(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    (project / "cook.toml").write_text('[cook]\nexecutor = "slurm"\n')
+    (project / "cook.toml").write_text('[cook]\nexecutor = "nosuch"\n')
     _write_recipe(
         project,
         """\
@@ -388,6 +388,29 @@ def test_unknown_executor_config(
     rc = main(["exec", "t"])
     assert rc == 1
     assert "unknown executor" in capsys.readouterr().out.lower()
+
+
+def test_exec_slurm_executor_config(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CLI instantiates SlurmExecutor with config from cook.toml."""
+    (project / "cook.toml").write_text(
+        '[cook]\nexecutor = "slurm"\n\n'
+        "[cook.slurm]\nmax_concurrent = 16\npoll_interval = 1.5\npoll_timeout = 7200\n"
+    )
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="t", cmd="true", outputs=[])
+        """,
+    )
+    # sbatch is not available locally, so task fails — but the slurm branch is exercised
+    rc = main(["exec", "t"])
+    assert rc == 1
+    output = capsys.readouterr().out.lower()
+    assert "sbatch" in output
 
 
 def test_exec_with_dependencies(

@@ -9,7 +9,8 @@ from pathlib import Path
 
 from .config import ConfigError, load_config
 from .context import Context
-from .executor import TaskExecutionError, get_executor
+from .executor import SlurmExecutor, TaskExecutionError, get_executor
+from .executor.slurm import PollTimeoutError
 from .scheduler import (
     BuildError,
     Scheduler,
@@ -143,10 +144,21 @@ def _cmd_exec(args: argparse.Namespace) -> int:
                     print(f"[{task.name}] STALE (would run)")
             return 0
 
-        max_concurrent = (
-            args.jobs if args.jobs is not None else config.local_max_concurrent
-        )
-        executor = executor_cls(max_concurrent=max_concurrent)
+        if executor_name == "slurm" and issubclass(executor_cls, SlurmExecutor):
+            max_concurrent = (
+                args.jobs if args.jobs is not None else config.slurm_max_concurrent
+            )
+            executor = executor_cls(
+                max_concurrent=max_concurrent,
+                poll_interval=config.slurm_poll_interval,
+                poll_timeout=config.slurm_poll_timeout,
+                poll_retries=config.slurm_poll_retries,
+            )
+        else:
+            max_concurrent = (
+                args.jobs if args.jobs is not None else config.local_max_concurrent
+            )
+            executor = executor_cls(max_concurrent=max_concurrent)
         with SqliteBuildStore(".cook.db") as store:
             scheduler = Scheduler(store, executor, keep_going=args.keep_going)
             asyncio.run(scheduler.run(targets))
@@ -266,6 +278,7 @@ def main(argv: list[str] | None = None) -> int:
         ConfigError,
         BuildError,
         TaskExecutionError,
+        PollTimeoutError,
         TaskOutputError,
         FileNotFoundError,
     ) as e:
