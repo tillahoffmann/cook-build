@@ -76,8 +76,7 @@ def test_digest_filters_out_task_deps() -> None:
 
 
 def test_digest_affected_by_input_order() -> None:
-    """digest() hashes the list as-is; reordering changes the digest.
-    (The scheduler sorts before computing effective digest, not the task.)"""
+    """Input order is part of identity (supports future $^-like semantics)."""
     t1 = Task(name="a", inputs=["x", "y"])
     t2 = Task(name="a", inputs=["y", "x"])
     assert t1.digest() != t2.digest()

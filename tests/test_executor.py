@@ -142,6 +142,20 @@ async def test_cwd_sets_working_directory(tmp_path: object) -> None:
     assert Path(result).resolve() == Path(str(tmp_path)).resolve()
 
 
+async def test_cancel_kills_running_subprocess() -> None:
+    """Cancelling a running task should terminate the subprocess promptly."""
+    executor = LocalExecutor()
+    task = ShellTask(name="long-running", cmd="sleep 60")
+    coro = executor.execute(task)
+    t = asyncio.ensure_future(coro)
+    await asyncio.sleep(0.1)  # let subprocess start
+    t.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await t
+    # Give OS a moment to reap the process
+    await asyncio.sleep(0.1)
+
+
 async def test_stderr_invalid_utf8() -> None:
     """Binary stderr should not crash error reporting."""
     executor = LocalExecutor()

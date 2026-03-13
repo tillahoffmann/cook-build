@@ -698,6 +698,99 @@ async def test_is_stale_dep_stale_propagates(
     assert is_stale(task, store) is True
 
 
+async def test_scheduler_records_last_failed(
+    tmp_path: Path,
+    store: SqliteBuildStore,
+    executor: LocalExecutor,
+) -> None:
+    """Scheduler should store a record with last_failed when a task fails."""
+    from cook.executor import TaskExecutionError
+
+    task = ShellTask(
+        name="fail-record",
+        cmd="echo oops >&2; exit 1",
+        outputs=[str(tmp_path / "nope.txt")],
+    )
+    sched = Scheduler(store, executor)
+    with pytest.raises(TaskExecutionError):
+        await sched.run([task])
+
+    record = store.get("fail-record")
+    assert record is not None
+    assert record.last_failed is not None
+    assert record.last_started is not None
+    assert record.last_succeeded is None
+    assert record.error is not None
+    assert "oops" in record.error
+
+
+async def test_input_modified_during_build_detected_as_stale(
+    tmp_path: Path,
+    store: SqliteBuildStore,
+    executor: LocalExecutor,
+) -> None:
+    """If an input file is modified while the task runs, the next build
+    should detect staleness because the stored digest no longer matches."""
+    infile = tmp_path / "src.txt"
+    infile.write_text("v1")
+    outfile = tmp_path / "out.txt"
+    # Task reads infile, but also sleeps briefly so we can modify infile mid-build
+    task = ShellTask(
+        name="racy",
+        cmd=f"cat {infile} > {outfile} && sleep 0.2",
+        inputs=[str(infile)],
+        outputs=[str(outfile)],
+    )
+    sched = Scheduler(store, executor)
+    import asyncio
+
+    run_fut = asyncio.ensure_future(sched.run([task]))
+    await asyncio.sleep(0.1)
+    # Modify input while task is running
+    infile.write_text("v2")
+    await run_fut
+
+    # Output was created with v1 content
+    assert outfile.read_text().strip() == "v1"
+    # But the stored digest was computed with v1 content in infile.
+    # Now infile has v2, so the task should be stale.
+    assert is_stale(task, store) is True
+
+
+async def test_cancel_stops_scheduler(
+    tmp_path: Path, store: SqliteBuildStore, executor: LocalExecutor
+) -> None:
+    """Cancelling the scheduler run stops execution of subsequent tasks."""
+    import asyncio
+
+    marker = tmp_path / "marker.txt"
+    # Task A runs quickly, Task B sleeps forever (would hang if not cancelled)
+    task_a = ShellTask(
+        name="quick",
+        cmd=f"echo done > {marker}",
+        outputs=[str(marker)],
+    )
+    task_b = ShellTask(
+        name="slow",
+        cmd="sleep 60",
+        inputs=[task_a],
+        outputs=[str(tmp_path / "never.txt")],
+    )
+    sched = Scheduler(store, executor)
+    t = asyncio.ensure_future(sched.run([task_b]))
+    # Wait for task A to finish, then cancel before B completes
+    for _ in range(50):
+        await asyncio.sleep(0.05)
+        if marker.exists():
+            break
+    t.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await t
+    # Task A completed, task B's output was never created
+    assert marker.exists()
+    assert not (tmp_path / "never.txt").exists()
+
+
 def test_is_stale_missing_file_input(tmp_path: Path, store: SqliteBuildStore) -> None:
     """Missing file input means the task is stale, not an error."""
     outfile = tmp_path / "out.txt"

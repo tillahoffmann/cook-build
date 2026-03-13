@@ -65,8 +65,7 @@ def compute_effective_digest(task: Task, store: BuildStore) -> str | None:
     h = hashlib.sha256()
     h.update(task.digest().encode())
 
-    file_inputs = sorted(task.file_inputs, key=lambda f: str(Path(f).resolve()))
-    for fi in file_inputs:
+    for fi in task.file_inputs:
         resolved = Path(fi).resolve()
         try:
             data = resolved.read_bytes()
@@ -77,7 +76,7 @@ def compute_effective_digest(task: Task, store: BuildStore) -> str | None:
         h.update(str(resolved).encode())
         h.update(data)
 
-    for name, digest in dep_digests:
+    for _, digest in dep_digests:
         h.update(digest.encode())
 
     return h.hexdigest()

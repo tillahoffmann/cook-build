@@ -326,6 +326,65 @@ def test_jobs_flag(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert outfile.exists()
 
 
+def test_dry_run_does_not_create_store(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Dry-run should not create or modify the .cook.db file."""
+    outfile = project / "out.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="build", cmd="echo x > {outfile}", outputs=["{outfile}"])
+        """,
+    )
+    db_path = project / ".cook.db"
+    assert not db_path.exists()
+    rc = main(["exec", "--dry-run", "build"])
+    assert rc == 0
+    assert not db_path.exists()
+
+
+def test_dry_run_does_not_modify_store(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Dry-run with existing store should not modify any records."""
+    outfile = project / "out.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="build", cmd="echo x > {outfile}", outputs=["{outfile}"])
+        """,
+    )
+    # Build first to populate store
+    rc = main(["exec", "build"])
+    assert rc == 0
+    capsys.readouterr()
+
+    # Record the store state
+    from cook.store.sqlite import SqliteBuildStore
+
+    with SqliteBuildStore(str(project / ".cook.db")) as store:
+        record_before = store.get("build")
+    assert record_before is not None
+
+    # Modify input to make task stale, then dry-run
+    outfile.unlink()
+    rc = main(["exec", "--dry-run", "build"])
+    assert rc == 0
+    assert "STALE" in capsys.readouterr().out
+
+    # Store record should be unchanged
+    with SqliteBuildStore(str(project / ".cook.db")) as store:
+        record_after = store.get("build")
+    assert record_after is not None
+    assert record_after.digest == record_before.digest
+    assert record_after.last_started == record_before.last_started
+
+
 def test_dry_run_short_flag(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     outfile = project / "out.txt"
     _write_recipe(
