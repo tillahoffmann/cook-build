@@ -18,7 +18,7 @@ from .scheduler import (
     compute_effective_digest,
     is_stale,
 )
-from .store import TaskRecord
+from .store import FileDigestCache, TaskRecord
 from .store.sqlite import SqliteBuildStore
 from .task import Task
 
@@ -134,9 +134,10 @@ def _cmd_exec(args: argparse.Namespace) -> int:
             all_tasks = _collect_transitive(targets)
             db_path = Path(".cook.db")
             if db_path.exists():
+                cache = FileDigestCache()
                 with SqliteBuildStore(str(db_path)) as store:
                     for task in all_tasks:
-                        stale = is_stale(task, store)
+                        stale = is_stale(task, store, cache)
                         status = "STALE (would run)" if stale else "up-to-date"
                         print(f"[{task.name}] {status}")
             else:
@@ -182,9 +183,10 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
         all_tasks = _collect_transitive(targets)
         db_path = Path(".cook.db")
         if db_path.exists():
+            cache = FileDigestCache()
             with SqliteBuildStore(str(db_path)) as store:
                 for task in all_tasks:
-                    stale = is_stale(task, store)
+                    stale = is_stale(task, store, cache)
                     status = "STALE" if stale else "up-to-date"
                     deps = ", ".join(d.name for d in task.task_deps)
                     dep_str = f" (deps: {deps})" if deps else ""

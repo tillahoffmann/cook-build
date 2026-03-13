@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 
 @dataclass
@@ -22,6 +24,28 @@ class TaskRecord:
         if end is None:
             return None
         return (end - self.last_started).total_seconds()
+
+
+class FileDigestCache:
+    """Cache file content hashes keyed by (resolved_path, mtime_ns).
+
+    If a file's mtime hasn't changed since the last hash, the cached
+    digest is returned without re-reading the file.
+    """
+
+    def __init__(self) -> None:
+        self._cache: dict[Path, tuple[int, bytes]] = {}
+
+    def hash_file(self, path: Path) -> bytes:
+        resolved = path.resolve()
+        mtime_ns = resolved.stat().st_mtime_ns
+        cached = self._cache.get(resolved)
+        if cached is not None and cached[0] == mtime_ns:
+            return cached[1]
+        data = resolved.read_bytes()
+        content_hash = hashlib.sha256(data).digest()
+        self._cache[resolved] = (mtime_ns, content_hash)
+        return content_hash
 
 
 class BuildStore(ABC):

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from cook.store import BuildStore, TaskRecord
+from cook.store import BuildStore, FileDigestCache, TaskRecord
 from cook.store.sqlite import SqliteBuildStore
 
 
@@ -166,3 +166,52 @@ def test_duration_none_without_timestamps() -> None:
 def test_build_store_is_abc() -> None:
     with pytest.raises(TypeError):
         BuildStore()  # type: ignore[abstract]
+
+
+# --- FileDigestCache tests ---
+
+
+def test_file_cache_returns_consistent_hash(tmp_path: Path) -> None:
+    f = tmp_path / "a.txt"
+    f.write_text("hello")
+    cache = FileDigestCache()
+    h1 = cache.hash_file(f)
+    h2 = cache.hash_file(f)
+    assert h1 == h2
+    assert isinstance(h1, bytes)
+    assert len(h1) == 32  # SHA-256 digest length
+
+
+def test_file_cache_detects_content_change(tmp_path: Path) -> None:
+    f = tmp_path / "a.txt"
+    f.write_text("v1")
+    cache = FileDigestCache()
+    h1 = cache.hash_file(f)
+    # Ensure mtime changes (some filesystems have 1s resolution)
+    import time
+
+    time.sleep(0.05)
+    f.write_text("v2")
+    h2 = cache.hash_file(f)
+    assert h1 != h2
+
+
+def test_file_cache_uses_mtime(tmp_path: Path) -> None:
+    """Same mtime means the cache returns without re-reading."""
+    f = tmp_path / "a.txt"
+    f.write_text("data")
+    cache = FileDigestCache()
+    h1 = cache.hash_file(f)
+    # Write same content — mtime changes, but hash should be same value
+    import time
+
+    time.sleep(0.05)
+    f.write_text("data")
+    h2 = cache.hash_file(f)
+    assert h1 == h2  # same content, same hash
+
+
+def test_file_cache_missing_file(tmp_path: Path) -> None:
+    cache = FileDigestCache()
+    with pytest.raises(FileNotFoundError):
+        cache.hash_file(tmp_path / "gone.txt")

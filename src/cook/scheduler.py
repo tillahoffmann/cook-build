@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .executor import Executor
-from .store import BuildStore, TaskRecord
+from .store import BuildStore, FileDigestCache, TaskRecord
 from .task import Task
 
 
@@ -44,7 +44,11 @@ def _task_name_from_error(e: Exception) -> str:
     return str(e)
 
 
-def compute_effective_digest(task: Task, store: BuildStore) -> str | None:
+def compute_effective_digest(
+    task: Task,
+    store: BuildStore,
+    file_cache: FileDigestCache | None = None,
+) -> str | None:
     """Compute the effective digest for a task given a store.
 
     Returns None if the task has no outputs or if any dependency
@@ -68,13 +72,17 @@ def compute_effective_digest(task: Task, store: BuildStore) -> str | None:
     for fi in task.file_inputs:
         resolved = Path(fi).resolve()
         try:
-            data = resolved.read_bytes()
+            content_hash = (
+                file_cache.hash_file(resolved)
+                if file_cache is not None
+                else hashlib.sha256(resolved.read_bytes()).digest()
+            )
         except FileNotFoundError:
             raise FileNotFoundError(
                 f"Input file '{resolved}' not found for task '{task.name}'"
             )
         h.update(str(resolved).encode())
-        h.update(data)
+        h.update(content_hash)
 
     for _, digest in dep_digests:
         h.update(digest.encode())
@@ -82,7 +90,11 @@ def compute_effective_digest(task: Task, store: BuildStore) -> str | None:
     return h.hexdigest()
 
 
-def is_stale(task: Task, store: BuildStore) -> bool:
+def is_stale(
+    task: Task,
+    store: BuildStore,
+    file_cache: FileDigestCache | None = None,
+) -> bool:
     """Return True if the task needs to run.
 
     A task is stale if:
@@ -96,11 +108,11 @@ def is_stale(task: Task, store: BuildStore) -> bool:
         return True
 
     for dep in task.task_deps:
-        if is_stale(dep, store):
+        if is_stale(dep, store, file_cache):
             return True
 
     try:
-        effective = compute_effective_digest(task, store)
+        effective = compute_effective_digest(task, store, file_cache)
     except FileNotFoundError:
         return True
     if effective is None:
@@ -128,6 +140,7 @@ class Scheduler:
         self._futures: dict[str, asyncio.Future[None]] = {}
         self._failed: set[str] = set()
         self._errors: list[Exception] = []
+        self._file_cache = FileDigestCache()
 
     async def run(self, targets: list[Task]) -> None:
         self._futures = {}
@@ -267,4 +280,4 @@ class Scheduler:
             )
 
     def _compute_effective_digest(self, task: Task) -> str | None:
-        return compute_effective_digest(task, self._store)
+        return compute_effective_digest(task, self._store, self._file_cache)
