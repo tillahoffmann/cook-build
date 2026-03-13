@@ -13,6 +13,8 @@ from .util import collect_transitive, load_recipe, match_targets, print_task_det
 
 def cmd_inspect(args: argparse.Namespace) -> int:
     config = load_config()
+    if args.file is not None:
+        config.recipe = args.file
 
     with Context() as ctx:
         try:

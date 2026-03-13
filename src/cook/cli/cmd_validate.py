@@ -13,6 +13,8 @@ from .util import collect_transitive, load_recipe, match_targets
 
 def cmd_validate(args: argparse.Namespace) -> int:
     config = load_config()
+    if args.file is not None:
+        config.recipe = args.file
 
     with Context() as ctx:
         try:

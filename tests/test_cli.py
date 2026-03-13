@@ -1180,3 +1180,99 @@ def test_ls_pattern_no_match(project: Path, capsys: pytest.CaptureFixture[str]) 
     rc = main(["ls", "nonexistent-*"])
     assert rc == 1
     assert "matched no tasks" in capsys.readouterr().out
+
+
+# --- -f / --file flag ---
+
+
+def test_file_flag(project: Path) -> None:
+    """The -f flag overrides the recipe file."""
+    outfile = project / "out.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="custom", cmd="echo ok > {outfile}", outputs=["{outfile}"])
+        """,
+        name="custom.py",
+    )
+    rc = main(["-f", "custom.py", "exec", "custom"])
+    assert rc == 0
+    assert outfile.exists()
+
+
+def test_file_long_flag(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="t", cmd="true")
+        """,
+        name="other.py",
+    )
+    rc = main(["--file", "other.py", "ls"])
+    assert rc == 0
+    assert "t" in capsys.readouterr().out
+
+
+def test_file_flag_inspect(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="t", cmd="true")
+        """,
+        name="alt.py",
+    )
+    rc = main(["-f", "alt.py", "inspect", "t"])
+    assert rc == 0
+    assert "[t]" in capsys.readouterr().out
+
+
+def test_file_flag_invalidate(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    outfile = project / "out.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="t", cmd="echo x > {outfile}", outputs=["{outfile}"])
+        """,
+        name="alt.py",
+    )
+    # Run first to have something to invalidate
+    rc = main(["-f", "alt.py", "exec", "t"])
+    assert rc == 0
+    capsys.readouterr()
+
+    rc = main(["-f", "alt.py", "invalidate", "t"])
+    assert rc == 0
+    assert "Invalidated" in capsys.readouterr().out
+
+
+def test_file_flag_validate(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    outfile = project / "out.txt"
+    outfile.write_text("done")
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="t", cmd="true", outputs=["{outfile}"])
+        """,
+        name="alt.py",
+    )
+    rc = main(["-f", "alt.py", "validate", "t"])
+    assert rc == 0
+    assert "validated" in capsys.readouterr().out
+
+
+def test_file_flag_missing(capsys: pytest.CaptureFixture[str]) -> None:
+    rc = main(["-f", "nonexistent.py", "ls"])
+    assert rc == 1
+    assert "Error loading recipe" in capsys.readouterr().out

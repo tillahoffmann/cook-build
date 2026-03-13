@@ -15,6 +15,9 @@ from .cmd_validate import cmd_validate
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cook", description="Cook build system")
+    parser.add_argument(
+        "-f", "--file", default=None, help="Recipe file (default: from cook.toml)"
+    )
     sub = parser.add_subparsers(dest="command")
 
     exec_p = sub.add_parser("exec", help="Run tasks matching a pattern")
