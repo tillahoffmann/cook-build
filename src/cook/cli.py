@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import fnmatch
 import importlib.util
+import re
 import sys
 from pathlib import Path
 
@@ -41,17 +42,29 @@ def _build_parser() -> argparse.ArgumentParser:
     exec_p.add_argument(
         "-x", "--executor", default=None, help="Override executor backend"
     )
+    exec_p.add_argument(
+        "-r", "--re", action="store_true", dest="regex", help="Use regex matching"
+    )
 
     inspect_p = sub.add_parser("inspect", help="Show dependency graph and staleness")
     inspect_p.add_argument("pattern", nargs="?", default=None)
+    inspect_p.add_argument(
+        "-r", "--re", action="store_true", dest="regex", help="Use regex matching"
+    )
 
     invalidate_p = sub.add_parser("invalidate", help="Invalidate stored digests")
     invalidate_p.add_argument("pattern", nargs="?", default=None)
+    invalidate_p.add_argument(
+        "-r", "--re", action="store_true", dest="regex", help="Use regex matching"
+    )
 
     validate_p = sub.add_parser(
         "validate", help="Mark tasks as up-to-date without running them"
     )
     validate_p.add_argument("pattern", nargs="?", default=None)
+    validate_p.add_argument(
+        "-r", "--re", action="store_true", dest="regex", help="Use regex matching"
+    )
 
     return parser
 
@@ -73,7 +86,10 @@ def _load_recipe(recipe_path: str) -> None:
 
 
 def _match_targets(
-    tasks: dict[str, Task], pattern: str | None, default: str | None
+    tasks: dict[str, Task],
+    pattern: str | None,
+    default: str | None,
+    use_regex: bool = False,
 ) -> list[Task]:
     effective_pattern = pattern if pattern is not None else default
     if effective_pattern is None:
@@ -81,9 +97,16 @@ def _match_targets(
             "No target pattern provided and no default configured in cook.toml. "
             "Specify a pattern: cook exec '<pattern>'"
         )
-    matched = [
-        t for name, t in tasks.items() if fnmatch.fnmatch(name, effective_pattern)
-    ]
+    if use_regex:
+        try:
+            compiled = re.compile(effective_pattern)
+        except re.error as e:
+            raise ValueError(f"Invalid regex pattern {effective_pattern!r}: {e}")
+        matched = [t for name, t in tasks.items() if compiled.search(name)]
+    else:
+        matched = [
+            t for name, t in tasks.items() if fnmatch.fnmatch(name, effective_pattern)
+        ]
     if not matched:
         available = ", ".join(sorted(tasks.keys()))
         raise ValueError(
@@ -128,7 +151,7 @@ def _cmd_exec(args: argparse.Namespace) -> int:
             return 1
 
         ctx.validate()
-        targets = _match_targets(ctx.tasks, args.pattern, config.default)
+        targets = _match_targets(ctx.tasks, args.pattern, config.default, args.regex)
 
         if args.dry_run:
             all_tasks = _collect_transitive(targets)
@@ -178,7 +201,7 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
             return 1
 
         ctx.validate()
-        targets = _match_targets(ctx.tasks, args.pattern, config.default)
+        targets = _match_targets(ctx.tasks, args.pattern, config.default, args.regex)
 
         all_tasks = _collect_transitive(targets)
         db_path = Path(".cook.db")
@@ -211,7 +234,7 @@ def _cmd_invalidate(args: argparse.Namespace) -> int:
             return 1
 
         ctx.validate()
-        targets = _match_targets(ctx.tasks, args.pattern, config.default)
+        targets = _match_targets(ctx.tasks, args.pattern, config.default, args.regex)
 
         with SqliteBuildStore(".cook.db") as store:
             for task in targets:
@@ -232,7 +255,7 @@ def _cmd_validate(args: argparse.Namespace) -> int:
             return 1
 
         ctx.validate()
-        targets = _match_targets(ctx.tasks, args.pattern, config.default)
+        targets = _match_targets(ctx.tasks, args.pattern, config.default, args.regex)
 
         all_tasks = _collect_transitive(targets)
         with SqliteBuildStore(".cook.db") as store:

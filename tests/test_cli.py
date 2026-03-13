@@ -63,6 +63,41 @@ def test_exec_pattern_matching(
     assert not out_other.exists()
 
 
+def test_exec_regex_pattern(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    out_a = project / "a.txt"
+    out_b = project / "b.txt"
+    out_other = project / "other.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="compile-a", cmd="echo a > {out_a}", outputs=["{out_a}"])
+        ctx.sh(name="compile-b", cmd="echo b > {out_b}", outputs=["{out_b}"])
+        ctx.sh(name="test-all", cmd="echo other > {out_other}", outputs=["{out_other}"])
+        """,
+    )
+    rc = main(["exec", "--re", "^compile-"])
+    assert rc == 0
+    assert out_a.exists()
+    assert out_b.exists()
+    assert not out_other.exists()
+
+
+def test_exec_regex_invalid(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="t", cmd="true", outputs=[])
+        """,
+    )
+    rc = main(["exec", "--re", "[invalid"])
+    assert rc == 1
+    assert "Invalid regex" in capsys.readouterr().out
+
+
 def test_exec_with_default_config(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
