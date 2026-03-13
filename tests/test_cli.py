@@ -1025,3 +1025,158 @@ def test_validate_with_deps(project: Path, capsys: pytest.CaptureFixture[str]) -
     captured = capsys.readouterr().out
     assert "up-to-date" in captured
     assert "STALE" not in captured
+
+
+# --- ls command ---
+
+
+def test_ls_lists_all_tasks(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="alpha", cmd="true")
+        ctx.sh(name="beta", cmd="true")
+        ctx.sh(name="gamma", cmd="true")
+        """,
+    )
+    rc = main(["ls"])
+    assert rc == 0
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert sorted(lines) == ["alpha", "beta", "gamma"]
+
+
+def test_ls_with_pattern(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="build-a", cmd="true")
+        ctx.sh(name="build-b", cmd="true")
+        ctx.sh(name="test-a", cmd="true")
+        """,
+    )
+    rc = main(["ls", "build-*"])
+    assert rc == 0
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert sorted(lines) == ["build-a", "build-b"]
+
+
+def test_ls_with_regex(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="build-a", cmd="true")
+        ctx.sh(name="build-b", cmd="true")
+        ctx.sh(name="test-a", cmd="true")
+        """,
+    )
+    rc = main(["ls", "--re", "^build-"])
+    assert rc == 0
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert sorted(lines) == ["build-a", "build-b"]
+
+
+def test_ls_stale_filter(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    outfile = project / "out.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="has-out", cmd="echo x > {outfile}", outputs=["{outfile}"])
+        ctx.sh(name="no-out", cmd="true")
+        """,
+    )
+    # Run to make has-out current
+    rc = main(["exec", "has-out"])
+    assert rc == 0
+    capsys.readouterr()
+
+    rc = main(["ls", "--stale"])
+    assert rc == 0
+    lines = capsys.readouterr().out.strip().splitlines()
+    # no-out has no outputs, always stale; has-out was just built
+    assert "no-out" in lines
+    assert "has-out" not in lines
+
+
+def test_ls_current_filter(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    outfile = project / "out.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="has-out", cmd="echo x > {outfile}", outputs=["{outfile}"])
+        ctx.sh(name="no-out", cmd="true")
+        """,
+    )
+    # Run to make has-out current
+    rc = main(["exec", "has-out"])
+    assert rc == 0
+    capsys.readouterr()
+
+    rc = main(["ls", "--current"])
+    assert rc == 0
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert "has-out" in lines
+    assert "no-out" not in lines
+
+
+def test_ls_stale_no_store(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Without a store, --stale lists all tasks."""
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="a", cmd="true")
+        ctx.sh(name="b", cmd="true")
+        """,
+    )
+    rc = main(["ls", "--stale"])
+    assert rc == 0
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert sorted(lines) == ["a", "b"]
+
+
+def test_ls_current_no_store(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Without a store, --current lists nothing."""
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="a", cmd="true")
+        """,
+    )
+    rc = main(["ls", "--current"])
+    assert rc == 0
+    captured = capsys.readouterr().out.strip()
+    assert captured == ""
+
+
+def test_ls_recipe_error(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _write_recipe(project, "raise RuntimeError('boom')")
+    rc = main(["ls"])
+    assert rc == 1
+    assert "Error loading recipe" in capsys.readouterr().out
+
+
+def test_ls_pattern_no_match(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="task1", cmd="true")
+        """,
+    )
+    rc = main(["ls", "nonexistent-*"])
+    assert rc == 1
+    assert "matched no tasks" in capsys.readouterr().out

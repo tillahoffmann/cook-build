@@ -67,6 +67,19 @@ def _build_parser() -> argparse.ArgumentParser:
         "-r", "--re", action="store_true", dest="regex", help="Use regex matching"
     )
 
+    ls_p = sub.add_parser("ls", help="List task names")
+    ls_p.add_argument("pattern", nargs="*")
+    ls_p.add_argument(
+        "-r", "--re", action="store_true", dest="regex", help="Use regex matching"
+    )
+    ls_filter = ls_p.add_mutually_exclusive_group()
+    ls_filter.add_argument(
+        "-s", "--stale", action="store_true", help="Only show stale tasks"
+    )
+    ls_filter.add_argument(
+        "-c", "--current", action="store_true", help="Only show up-to-date tasks"
+    )
+
     return parser
 
 
@@ -344,6 +357,45 @@ def _cmd_validate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_ls(args: argparse.Namespace) -> int:
+    config = load_config()
+
+    with Context() as ctx:
+        try:
+            _load_recipe(config.recipe)
+        except Exception as e:
+            print(f"Error loading recipe: {e}")
+            return 1
+
+        ctx.validate()
+
+        if args.pattern:
+            tasks = _match_targets(ctx.tasks, args.pattern, config.default, args.regex)
+        else:
+            tasks = list(ctx.tasks.values())
+
+        if args.stale or args.current:
+            db_path = Path(".cook.db")
+            if db_path.exists():
+                cache = FileDigestCache()
+                with SqliteBuildStore(str(db_path)) as store:
+                    for task in tasks:
+                        stale = is_stale(task, store, cache)
+                        if (args.stale and stale) or (args.current and not stale):
+                            print(task.name)
+            else:
+                # No store means everything is stale
+                if args.stale:
+                    for task in tasks:
+                        print(task.name)
+                # --current with no store: nothing is current
+        else:
+            for task in tasks:
+                print(task.name)
+
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -357,6 +409,7 @@ def main(argv: list[str] | None = None) -> int:
         "inspect": _cmd_inspect,
         "invalidate": _cmd_invalidate,
         "validate": _cmd_validate,
+        "ls": _cmd_ls,
     }
 
     try:
