@@ -6,6 +6,7 @@ import fnmatch
 import importlib.util
 import re
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .config import ConfigError, load_config
@@ -195,6 +196,67 @@ def _cmd_exec(args: argparse.Namespace) -> int:
     return 0
 
 
+def _format_relative_time(dt: datetime) -> str:
+    now = datetime.now(timezone.utc)
+    delta = now - dt
+    seconds = int(delta.total_seconds())
+    if seconds < 60:
+        return f"{seconds}s ago"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes}m ago"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours}h ago"
+    days = hours // 24
+    return f"{days}d ago"
+
+
+def _print_task_detail(task: Task, stale: bool, record: TaskRecord | None) -> None:
+    from .task import ShellTask
+
+    status = "STALE" if stale else "up-to-date"
+    print(f"[{task.name}] {status}")
+
+    # Dependencies
+    deps = task.task_deps
+    if deps:
+        print(f"    deps: {', '.join(d.name for d in deps)}")
+
+    # File inputs
+    file_inputs = task.file_inputs
+    if file_inputs:
+        print(f"    inputs: {', '.join(str(f) for f in file_inputs)}")
+
+    # Outputs
+    if task.outputs:
+        print(f"    outputs: {', '.join(str(o) for o in task.outputs)}")
+
+    # Command (for ShellTask)
+    if isinstance(task, ShellTask) and task.cmd:
+        cmd_display = task.cmd if len(task.cmd) <= 80 else task.cmd[:77] + "..."
+        print(f"    cmd: {cmd_display}")
+
+    # Execution history from store
+    if record is not None:
+        if record.last_started:
+            print(f"    last started: {_format_relative_time(record.last_started)}")
+        if record.last_succeeded:
+            line = f"    last succeeded: {_format_relative_time(record.last_succeeded)}"
+            if record.last_started and record.last_succeeded >= record.last_started:
+                duration = (record.last_succeeded - record.last_started).total_seconds()
+                line += f" ({duration:.1f}s)"
+            print(line)
+        if record.last_failed:
+            line = f"    last failed: {_format_relative_time(record.last_failed)}"
+            if record.last_started and record.last_failed >= record.last_started:
+                duration = (record.last_failed - record.last_started).total_seconds()
+                line += f" ({duration:.1f}s)"
+            print(line)
+        if record.error:
+            print(f"    error: {record.error}")
+
+
 def _cmd_inspect(args: argparse.Namespace) -> int:
     config = load_config()
 
@@ -215,15 +277,11 @@ def _cmd_inspect(args: argparse.Namespace) -> int:
             with SqliteBuildStore(str(db_path)) as store:
                 for task in all_tasks:
                     stale = is_stale(task, store, cache)
-                    status = "STALE" if stale else "up-to-date"
-                    deps = ", ".join(d.name for d in task.task_deps)
-                    dep_str = f" (deps: {deps})" if deps else ""
-                    print(f"[{task.name}] {status}{dep_str}")
+                    record = store.get(task.task_id)
+                    _print_task_detail(task, stale, record)
         else:
             for task in all_tasks:
-                deps = ", ".join(d.name for d in task.task_deps)
-                dep_str = f" (deps: {deps})" if deps else ""
-                print(f"[{task.name}] STALE{dep_str}")
+                _print_task_detail(task, True, None)
 
     return 0
 

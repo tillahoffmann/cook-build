@@ -253,6 +253,79 @@ def test_inspect_with_store(project: Path, capsys: pytest.CaptureFixture[str]) -
     assert "up-to-date" in captured
 
 
+def test_format_relative_time() -> None:
+    from datetime import datetime, timedelta, timezone
+
+    from cook.cli import _format_relative_time
+
+    now = datetime.now(timezone.utc)
+    assert "s ago" in _format_relative_time(now - timedelta(seconds=30))
+    assert "m ago" in _format_relative_time(now - timedelta(minutes=5))
+    assert "h ago" in _format_relative_time(now - timedelta(hours=3))
+    assert "d ago" in _format_relative_time(now - timedelta(days=2))
+
+
+def test_inspect_shows_details(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Inspect shows inputs, outputs, command, and execution history."""
+    infile = project / "src.txt"
+    infile.write_text("data")
+    outfile = project / "out.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(
+            name="build",
+            cmd="cat {infile} > {outfile}",
+            inputs=["{infile}"],
+            outputs=["{outfile}"],
+        )
+        """,
+    )
+    # Run to populate store
+    rc = main(["exec", "build"])
+    assert rc == 0
+    capsys.readouterr()
+
+    rc = main(["inspect", "build"])
+    assert rc == 0
+    captured = capsys.readouterr().out
+    assert "[build] up-to-date" in captured
+    assert "inputs:" in captured
+    assert "outputs:" in captured
+    assert "cmd:" in captured
+    assert "last started:" in captured
+    assert "last succeeded:" in captured
+
+
+def test_inspect_shows_failure_history(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Inspect shows last failed and error message."""
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="bad", cmd="echo oops >&2; exit 1", outputs=["nope.txt"])
+        """,
+    )
+    # Run and fail
+    rc = main(["exec", "bad"])
+    assert rc == 1
+    capsys.readouterr()
+
+    rc = main(["inspect", "bad"])
+    assert rc == 0
+    captured = capsys.readouterr().out
+    assert "[bad] STALE" in captured
+    assert "last failed:" in captured
+    assert "error:" in captured
+
+
 def test_invalidate(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     outfile = project / "out.txt"
     _write_recipe(
