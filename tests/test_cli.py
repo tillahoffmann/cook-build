@@ -63,6 +63,29 @@ def test_exec_pattern_matching(
     assert not out_other.exists()
 
 
+def test_exec_multiple_patterns(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    out_a = project / "a.txt"
+    out_b = project / "b.txt"
+    out_c = project / "c.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="compile-a", cmd="echo a > {out_a}", outputs=["{out_a}"])
+        ctx.sh(name="test-b", cmd="echo b > {out_b}", outputs=["{out_b}"])
+        ctx.sh(name="lint-c", cmd="echo c > {out_c}", outputs=["{out_c}"])
+        """,
+    )
+    rc = main(["exec", "compile-*", "test-*"])
+    assert rc == 0
+    assert out_a.exists()
+    assert out_b.exists()
+    assert not out_c.exists()
+
+
 def test_exec_regex_pattern(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     out_a = project / "a.txt"
     out_b = project / "b.txt"

@@ -29,7 +29,7 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
 
     exec_p = sub.add_parser("exec", help="Run tasks matching a pattern")
-    exec_p.add_argument("pattern", nargs="?", default=None)
+    exec_p.add_argument("pattern", nargs="*")
     exec_p.add_argument(
         "-n", "--dry-run", action="store_true", help="Show what would run"
     )
@@ -47,13 +47,13 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     inspect_p = sub.add_parser("inspect", help="Show dependency graph and staleness")
-    inspect_p.add_argument("pattern", nargs="?", default=None)
+    inspect_p.add_argument("pattern", nargs="*")
     inspect_p.add_argument(
         "-r", "--re", action="store_true", dest="regex", help="Use regex matching"
     )
 
     invalidate_p = sub.add_parser("invalidate", help="Invalidate stored digests")
-    invalidate_p.add_argument("pattern", nargs="?", default=None)
+    invalidate_p.add_argument("pattern", nargs="*")
     invalidate_p.add_argument(
         "-r", "--re", action="store_true", dest="regex", help="Use regex matching"
     )
@@ -61,7 +61,7 @@ def _build_parser() -> argparse.ArgumentParser:
     validate_p = sub.add_parser(
         "validate", help="Mark tasks as up-to-date without running them"
     )
-    validate_p.add_argument("pattern", nargs="?", default=None)
+    validate_p.add_argument("pattern", nargs="*")
     validate_p.add_argument(
         "-r", "--re", action="store_true", dest="regex", help="Use regex matching"
     )
@@ -87,31 +87,36 @@ def _load_recipe(recipe_path: str) -> None:
 
 def _match_targets(
     tasks: dict[str, Task],
-    pattern: str | None,
+    patterns: list[str],
     default: str | None,
     use_regex: bool = False,
 ) -> list[Task]:
-    effective_pattern = pattern if pattern is not None else default
-    if effective_pattern is None:
+    effective_patterns = patterns if patterns else ([default] if default else [])
+    if not effective_patterns:
         raise ValueError(
             "No target pattern provided and no default configured in cook.toml. "
             "Specify a pattern: cook exec '<pattern>'"
         )
-    if use_regex:
-        try:
-            compiled = re.compile(effective_pattern)
-        except re.error as e:
-            raise ValueError(f"Invalid regex pattern {effective_pattern!r}: {e}")
-        matched = [t for name, t in tasks.items() if compiled.search(name)]
-    else:
-        matched = [
-            t for name, t in tasks.items() if fnmatch.fnmatch(name, effective_pattern)
-        ]
+    seen: set[str] = set()
+    matched: list[Task] = []
+    for pat in effective_patterns:
+        if use_regex:
+            try:
+                compiled = re.compile(pat)
+            except re.error as e:
+                raise ValueError(f"Invalid regex pattern {pat!r}: {e}")
+            hits = [t for name, t in tasks.items() if compiled.search(name)]
+        else:
+            hits = [t for name, t in tasks.items() if fnmatch.fnmatch(name, pat)]
+        for t in hits:
+            if t.name not in seen:
+                seen.add(t.name)
+                matched.append(t)
     if not matched:
+        pat_str = ", ".join(repr(p) for p in effective_patterns)
         available = ", ".join(sorted(tasks.keys()))
         raise ValueError(
-            f"Pattern {effective_pattern!r} matched no tasks. "
-            f"Available tasks: {available}"
+            f"Pattern(s) {pat_str} matched no tasks. Available tasks: {available}"
         )
     return matched
 
