@@ -253,16 +253,16 @@ def test_inspect_with_store(project: Path, capsys: pytest.CaptureFixture[str]) -
     assert "up-to-date" in captured
 
 
-def test_format_relative_time() -> None:
+def testformat_relative_time() -> None:
     from datetime import datetime, timedelta, timezone
 
-    from cook.cli import _format_relative_time
+    from cook.cli.util import format_relative_time
 
     now = datetime.now(timezone.utc)
-    assert "s ago" in _format_relative_time(now - timedelta(seconds=30))
-    assert "m ago" in _format_relative_time(now - timedelta(minutes=5))
-    assert "h ago" in _format_relative_time(now - timedelta(hours=3))
-    assert "d ago" in _format_relative_time(now - timedelta(days=2))
+    assert "s ago" in format_relative_time(now - timedelta(seconds=30))
+    assert "m ago" in format_relative_time(now - timedelta(minutes=5))
+    assert "h ago" in format_relative_time(now - timedelta(hours=3))
+    assert "d ago" in format_relative_time(now - timedelta(days=2))
 
 
 def test_inspect_shows_details(
@@ -812,11 +812,11 @@ def test_dry_run_staleness_cache(
     assert "[shared] STALE (would run)" in captured
 
 
-def test_load_recipe_empty_sys_path(
+def testload_recipe_empty_sys_path(
     project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Cover the empty sys.path branch."""
-    from cook.cli import _load_recipe
+    from cook.cli.util import load_recipe
 
     _write_recipe(
         project,
@@ -828,7 +828,7 @@ def test_load_recipe_empty_sys_path(
     sys.path.clear()
     try:
         with Context():
-            _load_recipe(str(project / "recipe.py"))
+            load_recipe(str(project / "recipe.py"))
     finally:
         sys.path.clear()
         sys.path.extend(original_path)
@@ -846,15 +846,15 @@ def test_main_module_block() -> None:
     assert result.returncode == 1
 
 
-def test_load_recipe_spec_none(
+def testload_recipe_spec_none(
     project: Path,
 ) -> None:
     """Cover the spec is None branch."""
-    from cook.cli import _load_recipe
+    from cook.cli.util import load_recipe
 
     # A directory can't be loaded as a module
     with pytest.raises(ImportError, match="Cannot load recipe"):
-        _load_recipe(str(project))
+        load_recipe(str(project))
 
 
 def test_dry_run_no_record_in_store(
