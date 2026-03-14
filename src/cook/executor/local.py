@@ -1,15 +1,25 @@
 from __future__ import annotations
 
 import asyncio
+from typing import TYPE_CHECKING
 
 from ..task import ShellTask, Task
 from . import Executor, TaskExecutionError, register_executor
+
+if TYPE_CHECKING:
+    from ..config import Config
 
 
 @register_executor("local")
 class LocalExecutor(Executor):
     def __init__(self, max_concurrent: int = 1) -> None:
         super().__init__(max_concurrent)
+
+    @classmethod
+    def from_config(cls, config: Config, jobs: int | None = None) -> LocalExecutor:
+        return cls(
+            max_concurrent=jobs if jobs is not None else config.local_max_concurrent
+        )
 
 
 @LocalExecutor.register_handler(task_type=ShellTask)

@@ -5,9 +5,13 @@ import re
 import shlex
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ..task import ShellTask, Task
 from . import Executor, TaskExecutionError, register_executor
+
+if TYPE_CHECKING:
+    from ..config import Config
 
 # scontrol job states that indicate the job is still active
 _ACTIVE_STATES = frozenset(
@@ -44,6 +48,15 @@ class SlurmExecutor(Executor):
         self.poll_interval = poll_interval
         self.poll_timeout = poll_timeout
         self.poll_retries = poll_retries
+
+    @classmethod
+    def from_config(cls, config: Config, jobs: int | None = None) -> SlurmExecutor:
+        return cls(
+            max_concurrent=jobs if jobs is not None else config.slurm_max_concurrent,
+            poll_interval=config.slurm_poll_interval,
+            poll_timeout=config.slurm_poll_timeout,
+            poll_retries=config.slurm_poll_retries,
+        )
 
 
 async def _run_cmd(

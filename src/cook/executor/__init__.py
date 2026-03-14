@@ -3,11 +3,14 @@ from __future__ import annotations
 import asyncio
 from abc import ABC
 from collections.abc import Awaitable, Callable
-from typing import Any, TypeVar, overload
+from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 _E = TypeVar("_E", bound="Executor")
 
 from ..task import Task
+
+if TYPE_CHECKING:
+    from ..config import Config
 
 
 class TaskExecutionError(Exception):
@@ -33,6 +36,10 @@ class Executor(ABC):
 
     def __init__(self, max_concurrent: int) -> None:
         self._semaphore = asyncio.Semaphore(max_concurrent)
+
+    @classmethod
+    def from_config(cls, config: Config, jobs: int | None = None) -> Executor:
+        raise NotImplementedError
 
     @overload
     @classmethod

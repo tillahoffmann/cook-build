@@ -6,7 +6,7 @@ from pathlib import Path
 
 from ..config import Config
 from ..context import Context
-from ..executor import SlurmExecutor, get_executor
+from ..executor import get_executor
 from ..scheduler import Scheduler, is_stale
 from ..store import FileDigestCache
 from ..store.sqlite import SqliteBuildStore
@@ -39,21 +39,7 @@ def cmd_exec(args: argparse.Namespace, config: Config, ctx: Context) -> int:
                 print(f"[{task.name}] STALE (would run)")
         return 0
 
-    if executor_name == "slurm" and issubclass(executor_cls, SlurmExecutor):
-        max_concurrent = (
-            args.jobs if args.jobs is not None else config.slurm_max_concurrent
-        )
-        executor = executor_cls(
-            max_concurrent=max_concurrent,
-            poll_interval=config.slurm_poll_interval,
-            poll_timeout=config.slurm_poll_timeout,
-            poll_retries=config.slurm_poll_retries,
-        )
-    else:
-        max_concurrent = (
-            args.jobs if args.jobs is not None else config.local_max_concurrent
-        )
-        executor = executor_cls(max_concurrent=max_concurrent)
+    executor = executor_cls.from_config(config, args.jobs)
     with SqliteBuildStore(".cook.db") as store:
         scheduler = Scheduler(store, executor, keep_going=args.keep_going)
         asyncio.run(scheduler.run(targets))
