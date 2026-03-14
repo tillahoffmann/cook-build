@@ -2,16 +2,13 @@ from __future__ import annotations
 
 import argparse
 
-from ..config import load_config
+from ..config import Config
 from ..context import Context
 from ..store.sqlite import SqliteBuildStore
 from .util import load_recipe, match_targets
 
 
-def cmd_invalidate(args: argparse.Namespace) -> int:
-    config = load_config()
-    if args.file is not None:
-        config.recipe = args.file
+def cmd_invalidate(args: argparse.Namespace, config: Config) -> int:
 
     with Context() as ctx:
         try:

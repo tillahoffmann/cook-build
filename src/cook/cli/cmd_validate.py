@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from ..config import load_config
+from ..config import Config
 from ..context import Context
 from ..scheduler import compute_effective_digest
 from ..store import TaskRecord
@@ -11,10 +11,7 @@ from ..store.sqlite import SqliteBuildStore
 from .util import collect_transitive, load_recipe, match_targets
 
 
-def cmd_validate(args: argparse.Namespace) -> int:
-    config = load_config()
-    if args.file is not None:
-        config.recipe = args.file
+def cmd_validate(args: argparse.Namespace, config: Config) -> int:
 
     with Context() as ctx:
         try:

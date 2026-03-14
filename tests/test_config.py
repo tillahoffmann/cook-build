@@ -14,7 +14,13 @@ def test_config_defaults():
 
 
 def test_load_config_missing_file(tmp_path: Path):
-    result = load_config(tmp_path / "nonexistent.toml")
+    with pytest.raises(ConfigError, match="Config file not found"):
+        load_config(tmp_path / "nonexistent.toml")
+
+
+def test_load_config_missing_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.chdir(tmp_path)
+    result = load_config()
     assert result == Config()
 
 

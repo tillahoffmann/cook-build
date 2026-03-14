@@ -1276,3 +1276,50 @@ def test_file_flag_missing(capsys: pytest.CaptureFixture[str]) -> None:
     rc = main(["-f", "nonexistent.py", "ls"])
     assert rc == 1
     assert "Error loading recipe" in capsys.readouterr().out
+
+
+# --- -c / --config flag ---
+
+
+def test_config_flag(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """The -c flag loads config from a custom file."""
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="t", cmd="true")
+        """,
+        name="my_recipe.py",
+    )
+    config = project / "dev.toml"
+    config.write_text('[cook]\nrecipe = "my_recipe.py"\n')
+    rc = main(["-c", str(config), "ls"])
+    assert rc == 0
+    assert "t" in capsys.readouterr().out
+
+
+def test_config_flag_missing(capsys: pytest.CaptureFixture[str]) -> None:
+    rc = main(["-c", "nonexistent.toml", "ls"])
+    assert rc == 1
+    assert "Config file not found" in capsys.readouterr().out
+
+
+def test_config_flag_file_overrides(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """-f takes precedence over recipe in config file."""
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="from-flag", cmd="true")
+        """,
+        name="flag.py",
+    )
+    config = project / "dev.toml"
+    config.write_text('[cook]\nrecipe = "wrong.py"\n')
+    rc = main(["-c", str(config), "-f", "flag.py", "ls"])
+    assert rc == 0
+    assert "from-flag" in capsys.readouterr().out

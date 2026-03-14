@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
+from pathlib import Path
 
-from ..config import ConfigError
+from ..config import Config, ConfigError, load_config
 from ..executor import TaskExecutionError
 from ..executor.slurm import PollTimeoutError
 from ..scheduler import BuildError, TaskOutputError
@@ -16,7 +18,10 @@ from .cmd_validate import cmd_validate
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cook", description="Cook build system")
     parser.add_argument(
-        "-f", "--file", default=None, help="Recipe file (default: from cook.toml)"
+        "-c", "--config", default=None, help="Config file (default: cook.toml)"
+    )
+    parser.add_argument(
+        "-f", "--file", default=None, help="Recipe file (default: from config)"
     )
     sub = parser.add_subparsers(dest="command")
 
@@ -82,7 +87,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 1
 
-    handlers = {
+    handlers: dict[str, Callable[[argparse.Namespace, Config], int]] = {
         "exec": cmd_exec,
         "inspect": cmd_inspect,
         "invalidate": cmd_invalidate,
@@ -91,7 +96,10 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     try:
-        return handlers[args.command](args)
+        config = load_config(Path(args.config) if args.config else None)
+        if args.file is not None:
+            config.recipe = args.file
+        return handlers[args.command](args, config)
     except (
         ValueError,
         ConfigError,

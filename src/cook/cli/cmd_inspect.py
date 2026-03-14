@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from ..config import load_config
+from ..config import Config
 from ..context import Context
 from ..scheduler import is_stale
 from ..store import FileDigestCache
@@ -11,10 +11,7 @@ from ..store.sqlite import SqliteBuildStore
 from .util import collect_transitive, load_recipe, match_targets, print_task_detail
 
 
-def cmd_inspect(args: argparse.Namespace) -> int:
-    config = load_config()
-    if args.file is not None:
-        config.recipe = args.file
+def cmd_inspect(args: argparse.Namespace, config: Config) -> int:
 
     with Context() as ctx:
         try:

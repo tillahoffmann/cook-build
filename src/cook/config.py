@@ -22,10 +22,13 @@ class Config:
 
 
 def load_config(path: Path | None = None) -> Config:
+    explicit = path is not None
     if path is None:
         path = Path.cwd() / "cook.toml"
 
     if not path.exists():
+        if explicit:
+            raise ConfigError(f"Config file not found: {path}")
         return Config()
 
     try:
