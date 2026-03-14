@@ -240,12 +240,16 @@ def test_extra_defaults_empty() -> None:
 
 
 def test_extra_stored() -> None:
-    t = ShellTask(name="a", cmd="echo hi", extra={"mem": "4G", "time": "01:00:00"})
-    assert t.extra["mem"] == "4G"
-    assert t.extra["time"] == "01:00:00"
+    t = ShellTask(
+        name="a",
+        cmd="echo hi",
+        extra={"slurm": {"mem": "4G", "time": "01:00:00"}},
+    )
+    assert t.extra["slurm"]["mem"] == "4G"
+    assert t.extra["slurm"]["time"] == "01:00:00"
 
 
 def test_extra_affects_digest() -> None:
     t1 = ShellTask(name="a", cmd="echo hi")
-    t2 = ShellTask(name="a", cmd="echo hi", extra={"mem": "4G"})
+    t2 = ShellTask(name="a", cmd="echo hi", extra={"slurm": {"mem": "4G"}})
     assert t1.digest() != t2.digest()

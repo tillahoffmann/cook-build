@@ -643,7 +643,7 @@ async def test_submit_job_extra_sbatch_flags() -> None:
     task = ShellTask(
         name="gpu-job",
         cmd="train.py",
-        extra={"mem": "8G", "time": "01:00:00", "partition": "gpu"},
+        extra={"slurm": {"mem": "8G", "time": "01:00:00", "partition": "gpu"}},
     )
     captured_cmd: list[str] = []
 
@@ -691,7 +691,7 @@ async def test_submit_job_defaults_merged() -> None:
     task = ShellTask(
         name="job",
         cmd="run.py",
-        extra={"mem": "16G"},  # overrides default
+        extra={"slurm": {"mem": "16G"}},  # overrides default
     )
     defaults = {"mem": "4G", "partition": "batch"}
     captured_cmd: list[str] = []
@@ -710,3 +710,40 @@ async def test_submit_job_defaults_merged() -> None:
     # Default applied
     assert "--partition" in captured_cmd
     assert captured_cmd[captured_cmd.index("--partition") + 1] == "batch"
+
+
+# --- validate_tasks ---
+
+
+def test_validate_tasks_valid_keys() -> None:
+    tasks = {
+        "t": ShellTask(
+            name="t",
+            cmd="run.py",
+            extra={"slurm": {"mem": "8G", "partition": "gpu"}},
+        )
+    }
+    SlurmExecutor.validate_tasks(tasks)  # should not raise
+
+
+def test_validate_tasks_no_slurm_key() -> None:
+    tasks = {"t": ShellTask(name="t", cmd="run.py")}
+    SlurmExecutor.validate_tasks(tasks)  # should not raise
+
+
+def test_validate_tasks_unknown_key() -> None:
+    tasks = {
+        "t": ShellTask(
+            name="t",
+            cmd="run.py",
+            extra={"slurm": {"mem": "8G", "memory": "16G"}},
+        )
+    }
+    with pytest.raises(ValueError, match="unknown slurm option.*memory"):
+        SlurmExecutor.validate_tasks(tasks)
+
+
+def test_validate_tasks_slurm_not_dict() -> None:
+    tasks = {"t": ShellTask(name="t", cmd="run.py", extra={"slurm": "bad"})}
+    with pytest.raises(ValueError, match="must be a dict"):
+        SlurmExecutor.validate_tasks(tasks)

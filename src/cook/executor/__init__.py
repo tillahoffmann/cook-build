@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from abc import ABC
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, TypeVar, overload
 
 _E = TypeVar("_E", bound="Executor")
@@ -79,6 +79,14 @@ class Executor(ABC):
             f"No handler registered for task type {task_type.__name__!r} "
             f"or any of its base classes"
         )
+
+    @classmethod
+    def validate_tasks(cls, tasks: Mapping[str, Task]) -> None:
+        """Validate executor-specific configuration on tasks.
+
+        Called after the task graph is built. Override in subclasses
+        to check executor-specific extra keys.
+        """
 
     async def execute(self, task: Task) -> None:
         handler = self._resolve_handler(type(task))

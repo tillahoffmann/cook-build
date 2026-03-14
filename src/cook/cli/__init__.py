@@ -6,7 +6,7 @@ from pathlib import Path
 
 from ..config import Config, ConfigError, load_config
 from ..context import Context
-from ..executor import TaskExecutionError
+from ..executor import TaskExecutionError, get_executor
 from ..executor.slurm import PollTimeoutError
 from ..scheduler import BuildError, TaskOutputError
 from .cmd_exec import cmd_exec
@@ -114,6 +114,15 @@ def main(argv: list[str] | None = None) -> int:
 
         try:
             ctx.validate()
+            executor_name = config.executor
+            if hasattr(args, "executor") and args.executor is not None:
+                executor_name = args.executor
+            try:
+                executor_cls = get_executor(executor_name)
+            except ValueError:
+                executor_cls = None
+            if executor_cls is not None:
+                executor_cls.validate_tasks(ctx.tasks)
             return handlers[args.command](args, config, ctx)
         except (
             ValueError,

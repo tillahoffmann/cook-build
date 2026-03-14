@@ -4,6 +4,7 @@ import asyncio
 import re
 import shlex
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -131,6 +132,26 @@ class SlurmExecutor(Executor):
             defaults=cfg.defaults,
         )
 
+    @classmethod
+    def validate_tasks(cls, tasks: Mapping[str, Task]) -> None:
+        valid_keys = set(_SBATCH_EXTRA_KEYS)
+        for task in tasks.values():
+            slurm_opts = task.extra.get("slurm")
+            if slurm_opts is None:
+                continue
+            if not isinstance(slurm_opts, dict):
+                raise ValueError(
+                    f"Task {task.name!r}: 'slurm' must be a dict, "
+                    f"got {type(slurm_opts).__name__}"
+                )
+            unknown = set(slurm_opts) - valid_keys
+            if unknown:
+                raise ValueError(
+                    f"Task {task.name!r}: unknown slurm option(s): "
+                    f"{', '.join(sorted(unknown))}. "
+                    f"Valid options: {', '.join(sorted(valid_keys))}"
+                )
+
 
 async def _run_cmd(
     *args: str,
@@ -192,8 +213,8 @@ async def _submit_job(task: ShellTask, defaults: dict[str, str] | None = None) -
     cmd: list[str] = ["sbatch", "--parsable"]
     if task.cwd:
         cmd.extend(["--chdir", task.cwd])
-    # Merge defaults with task extra; task extra takes precedence
-    merged = {**(defaults or {}), **task.extra}
+    # Merge defaults with task-level slurm opts; task opts take precedence
+    merged = {**(defaults or {}), **task.extra.get("slurm", {})}
     for key, flag in _SBATCH_EXTRA_KEYS.items():
         if key in merged:
             cmd.extend([flag, str(merged[key])])

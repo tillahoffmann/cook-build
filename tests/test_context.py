@@ -184,5 +184,9 @@ def test_validate_idempotent(ctx: Context) -> None:
 
 def test_sh_extra_kwargs() -> None:
     with Context() as ctx:
-        task = ctx.sh(name="gpu", cmd="train.py", mem="8G", partition="gpu")
-    assert task.extra == {"mem": "8G", "partition": "gpu"}
+        task = ctx.sh(
+            name="gpu",
+            cmd="train.py",
+            slurm={"mem": "8G", "partition": "gpu"},
+        )
+    assert task.extra == {"slurm": {"mem": "8G", "partition": "gpu"}}
