@@ -5,6 +5,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from ..config import Config, ConfigError, load_config
+from ..context import Context
 from ..executor import TaskExecutionError
 from ..executor.slurm import PollTimeoutError
 from ..scheduler import BuildError, TaskOutputError
@@ -13,6 +14,7 @@ from .cmd_inspect import cmd_inspect
 from .cmd_invalidate import cmd_invalidate
 from .cmd_ls import cmd_ls
 from .cmd_validate import cmd_validate
+from .util import load_recipe
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -87,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 1
 
-    handlers: dict[str, Callable[[argparse.Namespace, Config], int]] = {
+    handlers: dict[str, Callable[[argparse.Namespace, Config, Context], int]] = {
         "exec": cmd_exec,
         "inspect": cmd_inspect,
         "invalidate": cmd_invalidate,
@@ -99,15 +101,28 @@ def main(argv: list[str] | None = None) -> int:
         config = load_config(Path(args.config) if args.config else None)
         if args.file is not None:
             config.recipe = args.file
-        return handlers[args.command](args, config)
-    except (
-        ValueError,
-        ConfigError,
-        BuildError,
-        TaskExecutionError,
-        PollTimeoutError,
-        TaskOutputError,
-        FileNotFoundError,
-    ) as e:
+    except (ConfigError, FileNotFoundError) as e:
         print(f"Error: {e}")
         return 1
+
+    with Context() as ctx:
+        try:
+            load_recipe(config.recipe)
+        except Exception as e:
+            print(f"Error loading recipe: {e}")
+            return 1
+
+        try:
+            ctx.validate()
+            return handlers[args.command](args, config, ctx)
+        except (
+            ValueError,
+            ConfigError,
+            BuildError,
+            TaskExecutionError,
+            PollTimeoutError,
+            TaskOutputError,
+            FileNotFoundError,
+        ) as e:
+            print(f"Error: {e}")
+            return 1
