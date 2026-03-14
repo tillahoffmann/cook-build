@@ -1,25 +1,43 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import Any
 
+from ..config import ConfigError
 from ..task import ShellTask, Task
 from . import Executor, TaskExecutionError, register_executor
 
-if TYPE_CHECKING:
-    from ..config import Config
+
+@dataclass
+class LocalConfig:
+    max_concurrent: int = 1
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.max_concurrent, int) or isinstance(
+            self.max_concurrent, bool
+        ):
+            raise ConfigError(
+                f"Expected 'local.max_concurrent' to be an integer, "
+                f"got {type(self.max_concurrent).__name__}"
+            )
+        if self.max_concurrent < 1:
+            raise ConfigError(
+                f"'local.max_concurrent' must be >= 1, got {self.max_concurrent}"
+            )
 
 
-@register_executor("local")
+@register_executor("local", config_cls=LocalConfig)
 class LocalExecutor(Executor):
     def __init__(self, max_concurrent: int = 1) -> None:
         super().__init__(max_concurrent)
 
     @classmethod
-    def from_config(cls, config: Config, jobs: int | None = None) -> LocalExecutor:
-        return cls(
-            max_concurrent=jobs if jobs is not None else config.local_max_concurrent
-        )
+    def from_config(
+        cls, executor_config: dict[str, Any], jobs: int | None = None
+    ) -> LocalExecutor:
+        cfg = LocalConfig(**executor_config)
+        return cls(max_concurrent=jobs if jobs is not None else cfg.max_concurrent)
 
 
 @LocalExecutor.register_handler(task_type=ShellTask)

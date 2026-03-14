@@ -3,14 +3,11 @@ from __future__ import annotations
 import asyncio
 from abc import ABC
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any, TypeVar, overload
+from typing import Any, TypeVar, overload
 
 _E = TypeVar("_E", bound="Executor")
 
 from ..task import Task
-
-if TYPE_CHECKING:
-    from ..config import Config
 
 
 class TaskExecutionError(Exception):
@@ -38,7 +35,9 @@ class Executor(ABC):
         self._semaphore = asyncio.Semaphore(max_concurrent)
 
     @classmethod
-    def from_config(cls, config: Config, jobs: int | None = None) -> Executor:
+    def from_config(
+        cls, executor_config: dict[str, Any], jobs: int | None = None
+    ) -> Executor:
         raise NotImplementedError
 
     @overload
@@ -87,14 +86,15 @@ class Executor(ABC):
             await handler(self, task)
 
 
-_executor_registry: dict[str, type[Executor]] = {}
+_executor_registry: dict[str, tuple[type[Executor], type[Any] | None]] = {}
 
 
 def register_executor(
     name: str,
+    config_cls: type[Any] | None = None,
 ) -> Callable[[type[_E]], type[_E]]:
     def decorator(cls: type[_E]) -> type[_E]:
-        _executor_registry[name] = cls
+        _executor_registry[name] = (cls, config_cls)
         return cls
 
     return decorator
@@ -104,7 +104,7 @@ def get_executor(name: str) -> type[Executor]:
     if name not in _executor_registry:
         available = ", ".join(sorted(_executor_registry)) or "(none)"
         raise ValueError(f"Unknown executor {name!r}. Available: {available}")
-    return _executor_registry[name]
+    return _executor_registry[name][0]
 
 
 from .local import LocalExecutor

@@ -5,7 +5,10 @@ from dataclasses import dataclass
 
 import pytest
 
+from cook.config import ConfigError
 from cook.executor import Executor, LocalExecutor, TaskExecutionError
+from cook.executor.local import LocalConfig
+from cook.executor.slurm import SlurmConfig
 from cook.task import ShellTask, Task
 
 
@@ -166,3 +169,122 @@ async def test_stderr_invalid_utf8() -> None:
     assert exc_info.value.returncode == 1
     # Should contain the replacement character, not crash
     assert isinstance(exc_info.value.stderr, str)
+
+
+# --- LocalConfig ---
+
+
+def test_local_config_defaults():
+    cfg = LocalConfig()
+    assert cfg.max_concurrent == 1
+
+
+def test_local_config_valid():
+    cfg = LocalConfig(max_concurrent=8)
+    assert cfg.max_concurrent == 8
+
+
+def test_local_config_invalid_type():
+    with pytest.raises(ConfigError, match="integer"):
+        LocalConfig(max_concurrent=True)
+
+
+def test_local_config_too_low():
+    with pytest.raises(ConfigError, match="must be >= 1"):
+        LocalConfig(max_concurrent=0)
+
+
+def test_local_from_config():
+    executor = LocalExecutor.from_config({"max_concurrent": 4})
+    assert executor._semaphore._value == 4
+
+
+def test_local_from_config_empty():
+    executor = LocalExecutor.from_config({})
+    assert executor._semaphore._value == 1
+
+
+def test_local_from_config_jobs_override():
+    executor = LocalExecutor.from_config({"max_concurrent": 4}, jobs=8)
+    assert executor._semaphore._value == 8
+
+
+# --- SlurmConfig ---
+
+
+def test_slurm_config_defaults():
+    cfg = SlurmConfig()
+    assert cfg.max_concurrent == 64
+    assert cfg.poll_interval == 2.0
+    assert cfg.poll_timeout == 86400.0
+    assert cfg.poll_retries == 10
+    assert cfg.defaults == {}
+
+
+def test_slurm_config_valid():
+    cfg = SlurmConfig(max_concurrent=32, poll_interval=5.0, defaults={"mem": "4G"})
+    assert cfg.max_concurrent == 32
+    assert cfg.poll_interval == 5.0
+    assert cfg.defaults == {"mem": "4G"}
+
+
+def test_slurm_config_max_concurrent_invalid_type():
+    with pytest.raises(ConfigError, match="integer"):
+        SlurmConfig(max_concurrent=True)
+
+
+def test_slurm_config_max_concurrent_too_low():
+    with pytest.raises(ConfigError, match="must be >= 1"):
+        SlurmConfig(max_concurrent=0)
+
+
+def test_slurm_config_poll_interval_invalid_type():
+    with pytest.raises(ConfigError, match="number"):
+        SlurmConfig(poll_interval=True)  # type: ignore[arg-type]
+
+
+def test_slurm_config_poll_interval_too_low():
+    with pytest.raises(ConfigError, match="must be > 0"):
+        SlurmConfig(poll_interval=0)
+
+
+def test_slurm_config_poll_interval_int_coerced():
+    cfg = SlurmConfig(poll_interval=3)  # type: ignore[arg-type]
+    assert cfg.poll_interval == 3.0
+    assert isinstance(cfg.poll_interval, float)
+
+
+def test_slurm_config_poll_timeout_invalid_type():
+    with pytest.raises(ConfigError, match="number"):
+        SlurmConfig(poll_timeout=True)  # type: ignore[arg-type]
+
+
+def test_slurm_config_poll_timeout_too_low():
+    with pytest.raises(ConfigError, match="must be > 0"):
+        SlurmConfig(poll_timeout=0)
+
+
+def test_slurm_config_poll_timeout_int_coerced():
+    cfg = SlurmConfig(poll_timeout=3600)  # type: ignore[arg-type]
+    assert cfg.poll_timeout == 3600.0
+    assert isinstance(cfg.poll_timeout, float)
+
+
+def test_slurm_config_poll_retries_invalid_type():
+    with pytest.raises(ConfigError, match="integer"):
+        SlurmConfig(poll_retries=True)
+
+
+def test_slurm_config_poll_retries_too_low():
+    with pytest.raises(ConfigError, match="must be >= 1"):
+        SlurmConfig(poll_retries=0)
+
+
+def test_slurm_config_defaults_not_dict():
+    with pytest.raises(ConfigError, match="table"):
+        SlurmConfig(defaults="bad")  # type: ignore[arg-type]
+
+
+def test_slurm_config_defaults_non_string_value():
+    with pytest.raises(ConfigError, match="string"):
+        SlurmConfig(defaults={"mem": 42})  # type: ignore[dict-item]

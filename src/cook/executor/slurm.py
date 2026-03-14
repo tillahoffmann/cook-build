@@ -4,14 +4,13 @@ import asyncio
 import re
 import shlex
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Any
 
+from ..config import ConfigError
 from ..task import ShellTask, Task
 from . import Executor, TaskExecutionError, register_executor
-
-if TYPE_CHECKING:
-    from ..config import Config
 
 # scontrol job states that indicate the job is still active
 _ACTIVE_STATES = frozenset(
@@ -35,7 +34,75 @@ class PollTimeoutError(Exception):
     """Raised when polling for job completion exceeds the timeout."""
 
 
-@register_executor("slurm")
+@dataclass
+class SlurmConfig:
+    max_concurrent: int = 64
+    poll_interval: float = 2.0
+    poll_timeout: float = 86400.0
+    poll_retries: int = 10
+    defaults: dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.max_concurrent, int) or isinstance(
+            self.max_concurrent, bool
+        ):
+            raise ConfigError(
+                f"Expected 'slurm.max_concurrent' to be an integer, "
+                f"got {type(self.max_concurrent).__name__}"
+            )
+        if self.max_concurrent < 1:
+            raise ConfigError(
+                f"'slurm.max_concurrent' must be >= 1, got {self.max_concurrent}"
+            )
+        if not isinstance(self.poll_interval, (int, float)) or isinstance(
+            self.poll_interval, bool
+        ):
+            raise ConfigError(
+                f"Expected 'slurm.poll_interval' to be a number, "
+                f"got {type(self.poll_interval).__name__}"
+            )
+        if self.poll_interval <= 0:
+            raise ConfigError(
+                f"'slurm.poll_interval' must be > 0, got {self.poll_interval}"
+            )
+        self.poll_interval = float(self.poll_interval)
+        if not isinstance(self.poll_timeout, (int, float)) or isinstance(
+            self.poll_timeout, bool
+        ):
+            raise ConfigError(
+                f"Expected 'slurm.poll_timeout' to be a number, "
+                f"got {type(self.poll_timeout).__name__}"
+            )
+        if self.poll_timeout <= 0:
+            raise ConfigError(
+                f"'slurm.poll_timeout' must be > 0, got {self.poll_timeout}"
+            )
+        self.poll_timeout = float(self.poll_timeout)
+        if not isinstance(self.poll_retries, int) or isinstance(
+            self.poll_retries, bool
+        ):
+            raise ConfigError(
+                f"Expected 'slurm.poll_retries' to be an integer, "
+                f"got {type(self.poll_retries).__name__}"
+            )
+        if self.poll_retries < 1:
+            raise ConfigError(
+                f"'slurm.poll_retries' must be >= 1, got {self.poll_retries}"
+            )
+        if not isinstance(self.defaults, dict):
+            raise ConfigError(
+                f"Expected 'slurm.defaults' to be a table, "
+                f"got {type(self.defaults).__name__}"
+            )
+        for k, v in self.defaults.items():
+            if not isinstance(v, str):
+                raise ConfigError(
+                    f"Expected 'slurm.defaults.{k}' to be a string, "
+                    f"got {type(v).__name__}"
+                )
+
+
+@register_executor("slurm", config_cls=SlurmConfig)
 class SlurmExecutor(Executor):
     def __init__(
         self,
@@ -52,13 +119,16 @@ class SlurmExecutor(Executor):
         self.defaults: dict[str, str] = defaults or {}
 
     @classmethod
-    def from_config(cls, config: Config, jobs: int | None = None) -> SlurmExecutor:
+    def from_config(
+        cls, executor_config: dict[str, Any], jobs: int | None = None
+    ) -> SlurmExecutor:
+        cfg = SlurmConfig(**executor_config)
         return cls(
-            max_concurrent=jobs if jobs is not None else config.slurm_max_concurrent,
-            poll_interval=config.slurm_poll_interval,
-            poll_timeout=config.slurm_poll_timeout,
-            poll_retries=config.slurm_poll_retries,
-            defaults=config.slurm_defaults,
+            max_concurrent=jobs if jobs is not None else cfg.max_concurrent,
+            poll_interval=cfg.poll_interval,
+            poll_timeout=cfg.poll_timeout,
+            poll_retries=cfg.poll_retries,
+            defaults=cfg.defaults,
         )
 
 

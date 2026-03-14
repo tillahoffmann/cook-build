@@ -39,7 +39,8 @@ def cmd_exec(args: argparse.Namespace, config: Config, ctx: Context) -> int:
                 print(f"[{task.name}] STALE (would run)")
         return 0
 
-    executor = executor_cls.from_config(config, args.jobs)
+    executor_config = config.executor_configs.get(executor_name, {})
+    executor = executor_cls.from_config(executor_config, args.jobs)
     with SqliteBuildStore(".cook.db") as store:
         scheduler = Scheduler(store, executor, keep_going=args.keep_going)
         asyncio.run(scheduler.run(targets))
