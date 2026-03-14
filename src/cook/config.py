@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -19,6 +19,7 @@ class Config:
     slurm_poll_interval: float = 2.0
     slurm_poll_timeout: float = 86400.0
     slurm_poll_retries: int = 10
+    slurm_defaults: dict[str, str] = field(default_factory=dict)
 
 
 def load_config(path: Path | None = None) -> Config:
@@ -127,5 +128,18 @@ def load_config(path: Path | None = None) -> Config:
             if val < 1:
                 raise ConfigError(f"'slurm.poll_retries' must be >= 1, got {val}")
             config.slurm_poll_retries = val
+
+        if "defaults" in slurm:
+            defaults = slurm["defaults"]
+            if not isinstance(defaults, dict):
+                raise ConfigError(
+                    f"Expected [cook.slurm.defaults] to be a table, got {type(defaults).__name__}"
+                )
+            for k, v in defaults.items():
+                if not isinstance(v, str):
+                    raise ConfigError(
+                        f"Expected 'slurm.defaults.{k}' to be a string, got {type(v).__name__}"
+                    )
+            config.slurm_defaults = {k: str(v) for k, v in defaults.items()}
 
     return config

@@ -43,11 +43,13 @@ class SlurmExecutor(Executor):
         poll_interval: float = 2.0,
         poll_timeout: float = 86400.0,
         poll_retries: int = 10,
+        defaults: dict[str, str] | None = None,
     ) -> None:
         super().__init__(max_concurrent)
         self.poll_interval = poll_interval
         self.poll_timeout = poll_timeout
         self.poll_retries = poll_retries
+        self.defaults: dict[str, str] = defaults or {}
 
     @classmethod
     def from_config(cls, config: Config, jobs: int | None = None) -> SlurmExecutor:
@@ -56,6 +58,7 @@ class SlurmExecutor(Executor):
             poll_interval=config.slurm_poll_interval,
             poll_timeout=config.slurm_poll_timeout,
             poll_retries=config.slurm_poll_retries,
+            defaults=config.slurm_defaults,
         )
 
 
@@ -100,11 +103,30 @@ def _build_wrapped_cmd(task: ShellTask) -> str:
     return f"{exports} {task.cmd}"
 
 
-async def _submit_job(task: ShellTask) -> str:
+_SBATCH_EXTRA_KEYS = {
+    "mem": "--mem",
+    "time": "--time",
+    "partition": "--partition",
+    "gres": "--gres",
+    "constraint": "--constraint",
+    "account": "--account",
+    "qos": "--qos",
+    "nodes": "--nodes",
+    "ntasks": "--ntasks",
+    "cpus_per_task": "--cpus-per-task",
+}
+
+
+async def _submit_job(task: ShellTask, defaults: dict[str, str] | None = None) -> str:
     """Submit a job via sbatch --wrap and return the job ID."""
     cmd: list[str] = ["sbatch", "--parsable"]
     if task.cwd:
         cmd.extend(["--chdir", task.cwd])
+    # Merge defaults with task extra; task extra takes precedence
+    merged = {**(defaults or {}), **task.extra}
+    for key, flag in _SBATCH_EXTRA_KEYS.items():
+        if key in merged:
+            cmd.extend([flag, str(merged[key])])
     cmd.extend(["--wrap", _build_wrapped_cmd(task)])
 
     rc, stdout, stderr = await _run_cmd(*cmd)
@@ -204,7 +226,7 @@ async def _handle_shell_task(executor: Executor, task: Task) -> None:
     assert isinstance(task, ShellTask)
     assert isinstance(executor, SlurmExecutor)
 
-    job_id = await _submit_job(task)
+    job_id = await _submit_job(task, executor.defaults)
     try:
         state, exit_code = await _poll_job(
             job_id,

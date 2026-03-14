@@ -267,3 +267,39 @@ def test_load_config_slurm_poll_retries_too_low(tmp_path: Path):
     p.write_text("[cook.slurm]\npoll_retries = 0\n")
     with pytest.raises(ConfigError, match="must be >= 1"):
         load_config(p)
+
+
+def test_load_config_slurm_defaults(tmp_path: Path):
+    p = tmp_path / "cook.toml"
+    p.write_text(
+        '[cook.slurm.defaults]\nmem = "4G"\ntime = "01:00:00"\npartition = "gpu"\n'
+    )
+    config = load_config(p)
+    assert config.slurm_defaults == {
+        "mem": "4G",
+        "time": "01:00:00",
+        "partition": "gpu",
+    }
+
+
+def test_load_config_slurm_defaults_empty(tmp_path: Path):
+    p = tmp_path / "cook.toml"
+    p.write_text("[cook.slurm.defaults]\n")
+    config = load_config(p)
+    assert config.slurm_defaults == {}
+
+
+def test_load_config_slurm_defaults_not_table(tmp_path: Path):
+    p = tmp_path / "cook.toml"
+    p.write_text('[cook.slurm]\ndefaults = "bad"\n')
+    with pytest.raises(ConfigError, match="Expected.*defaults.*to be a table"):
+        load_config(p)
+
+
+def test_load_config_slurm_defaults_non_string_value(tmp_path: Path):
+    p = tmp_path / "cook.toml"
+    p.write_text("[cook.slurm.defaults]\nmem = 42\n")
+    with pytest.raises(
+        ConfigError, match="Expected 'slurm.defaults.mem' to be a string"
+    ):
+        load_config(p)

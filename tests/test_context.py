@@ -180,3 +180,9 @@ def test_validate_idempotent(ctx: Context) -> None:
     assert ctx.tasks == tasks_after_first
     assert list(link_task.task_deps) == deps_after_first
     assert compile_task in link_task.task_deps
+
+
+def test_sh_extra_kwargs() -> None:
+    with Context() as ctx:
+        task = ctx.sh(name="gpu", cmd="train.py", mem="8G", partition="gpu")
+    assert task.extra == {"mem": "8G", "partition": "gpu"}

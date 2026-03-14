@@ -232,3 +232,20 @@ def test_shelltask_digest_includes_class_name() -> None:
     t = Task(name="a")
     st = ShellTask(name="a")
     assert t.digest() != st.digest()
+
+
+def test_extra_defaults_empty() -> None:
+    t = Task(name="a")
+    assert t.extra == {}
+
+
+def test_extra_stored() -> None:
+    t = ShellTask(name="a", cmd="echo hi", extra={"mem": "4G", "time": "01:00:00"})
+    assert t.extra["mem"] == "4G"
+    assert t.extra["time"] == "01:00:00"
+
+
+def test_extra_affects_digest() -> None:
+    t1 = ShellTask(name="a", cmd="echo hi")
+    t2 = ShellTask(name="a", cmd="echo hi", extra={"mem": "4G"})
+    assert t1.digest() != t2.digest()

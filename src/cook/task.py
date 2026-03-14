@@ -4,6 +4,7 @@ import hashlib
 import json
 from dataclasses import dataclass, field, fields
 from pathlib import Path
+from typing import Any
 
 _GLOB_CHARS = set("*?[]")
 
@@ -21,6 +22,7 @@ class Task:
     name: str
     inputs: list[str | Path | Task] = field(default_factory=list)
     outputs: list[str | Path] = field(default_factory=list)
+    extra: dict[str, Any] = field(default_factory=dict)
     _deps: set[Task] = field(default_factory=set, init=False, repr=False)
 
     def __post_init__(self) -> None:

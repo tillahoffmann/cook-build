@@ -23,11 +23,13 @@ import pytest
 
 from cook.executor import SlurmExecutor, TaskExecutionError
 from cook.executor.slurm import (
+    _SBATCH_EXTRA_KEYS,
     PollTimeoutError,
     _build_wrapped_cmd,
     _parse_scontrol,
     _read_job_output,
     _run_cmd,
+    _submit_job,
 )
 from cook.task import ShellTask
 
@@ -633,3 +635,78 @@ def test_parse_scontrol_multiline() -> None:
     assert info["JobId"] == "42"
     assert info["JobState"] == "COMPLETED"
     assert info["StdErr"] == "/tmp/slurm-42.out"
+
+
+@pytest.mark.asyncio
+async def test_submit_job_extra_sbatch_flags() -> None:
+    """Extra keys on the task are passed as sbatch flags."""
+    task = ShellTask(
+        name="gpu-job",
+        cmd="train.py",
+        extra={"mem": "8G", "time": "01:00:00", "partition": "gpu"},
+    )
+    captured_cmd: list[str] = []
+
+    async def fake_run_cmd(
+        *args: str, env: dict[str, str] | None = None, cwd: str | None = None
+    ) -> tuple[int, str, str]:
+        captured_cmd.extend(args)
+        return 0, "12345\n", ""
+
+    with patch("cook.executor.slurm._run_cmd", side_effect=fake_run_cmd):
+        job_id = await _submit_job(task)
+
+    assert job_id == "12345"
+    assert "--mem" in captured_cmd
+    assert captured_cmd[captured_cmd.index("--mem") + 1] == "8G"
+    assert "--time" in captured_cmd
+    assert captured_cmd[captured_cmd.index("--time") + 1] == "01:00:00"
+    assert "--partition" in captured_cmd
+    assert captured_cmd[captured_cmd.index("--partition") + 1] == "gpu"
+
+
+@pytest.mark.asyncio
+async def test_submit_job_no_extra() -> None:
+    """Without extra, no resource flags are added."""
+    task = ShellTask(name="plain", cmd="echo hi")
+    captured_cmd: list[str] = []
+
+    async def fake_run_cmd(
+        *args: str, env: dict[str, str] | None = None, cwd: str | None = None
+    ) -> tuple[int, str, str]:
+        captured_cmd.extend(args)
+        return 0, "99\n", ""
+
+    with patch("cook.executor.slurm._run_cmd", side_effect=fake_run_cmd):
+        await _submit_job(task)
+
+    # Only sbatch, --parsable, --wrap, and the command itself
+    for flag in _SBATCH_EXTRA_KEYS.values():
+        assert flag not in captured_cmd
+
+
+@pytest.mark.asyncio
+async def test_submit_job_defaults_merged() -> None:
+    """Config defaults are merged, with task extra taking precedence."""
+    task = ShellTask(
+        name="job",
+        cmd="run.py",
+        extra={"mem": "16G"},  # overrides default
+    )
+    defaults = {"mem": "4G", "partition": "batch"}
+    captured_cmd: list[str] = []
+
+    async def fake_run_cmd(
+        *args: str, env: dict[str, str] | None = None, cwd: str | None = None
+    ) -> tuple[int, str, str]:
+        captured_cmd.extend(args)
+        return 0, "100\n", ""
+
+    with patch("cook.executor.slurm._run_cmd", side_effect=fake_run_cmd):
+        await _submit_job(task, defaults)
+
+    # Task extra overrides default
+    assert captured_cmd[captured_cmd.index("--mem") + 1] == "16G"
+    # Default applied
+    assert "--partition" in captured_cmd
+    assert captured_cmd[captured_cmd.index("--partition") + 1] == "batch"

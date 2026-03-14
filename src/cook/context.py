@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from contextvars import ContextVar, Token
 from pathlib import Path
-from typing import Self
+from typing import Any, Self
 
 from .task import ShellTask, Task
 from .transform import DEFAULT_TRANSFORMS, GraphTransform
@@ -41,6 +41,7 @@ class Context:
         outputs: Sequence[str | Path] | None = None,
         env: dict[str, str] | None = None,
         cwd: str | None = None,
+        **extra: Any,
     ) -> ShellTask:
         task = ShellTask(
             name=name,
@@ -49,6 +50,7 @@ class Context:
             outputs=list(outputs) if outputs is not None else [],
             env=env,
             cwd=cwd,
+            extra=extra,
         )
         self.register(task)
         return task
