@@ -8,10 +8,13 @@ from ..context import Context
 from ..scheduler import compute_effective_digest
 from ..store import TaskRecord
 from ..store.sqlite import SqliteBuildStore
+from ..ui import Output
 from .util import collect_transitive, match_targets
 
 
-def cmd_validate(args: argparse.Namespace, config: Config, ctx: Context) -> int:
+def cmd_validate(
+    args: argparse.Namespace, config: Config, ctx: Context, ui: Output
+) -> int:
     targets = match_targets(ctx.tasks, args.pattern, config.default, args.regex)
 
     all_tasks = collect_transitive(targets)
@@ -19,7 +22,9 @@ def cmd_validate(args: argparse.Namespace, config: Config, ctx: Context) -> int:
         for task in all_tasks:
             effective = compute_effective_digest(task, store)
             if effective is None:
-                print(f"[{task.name}] skipped (no outputs or always-run dependency)")
+                ui.status(
+                    f"[{task.name}] skipped (no outputs or always-run dependency)"
+                )
                 continue
             missing = [
                 Path(o).resolve()
@@ -28,9 +33,9 @@ def cmd_validate(args: argparse.Namespace, config: Config, ctx: Context) -> int:
             ]
             if missing:
                 paths = ", ".join(str(p) for p in missing)
-                print(f"[{task.name}] skipped (missing outputs: {paths})")
+                ui.status(f"[{task.name}] skipped (missing outputs: {paths})")
                 continue
             store.save(TaskRecord(task_id=task.task_id, digest=effective))
-            print(f"[{task.name}] validated")
+            ui.status(f"[{task.name}] validated")
 
     return 0

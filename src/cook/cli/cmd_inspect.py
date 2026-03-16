@@ -8,10 +8,13 @@ from ..context import Context
 from ..scheduler import is_stale
 from ..store import FileDigestCache
 from ..store.sqlite import SqliteBuildStore
+from ..ui import Output
 from .util import collect_transitive, match_targets, print_task_detail
 
 
-def cmd_inspect(args: argparse.Namespace, config: Config, ctx: Context) -> int:
+def cmd_inspect(
+    args: argparse.Namespace, config: Config, ctx: Context, ui: Output
+) -> int:
     targets = match_targets(ctx.tasks, args.pattern, config.default, args.regex)
 
     all_tasks = collect_transitive(targets)
@@ -22,9 +25,9 @@ def cmd_inspect(args: argparse.Namespace, config: Config, ctx: Context) -> int:
             for task in all_tasks:
                 stale = is_stale(task, store, cache)
                 record = store.get(task.task_id)
-                print_task_detail(task, stale, record)
+                print_task_detail(task, stale, record, ui)
     else:
         for task in all_tasks:
-            print_task_detail(task, True, None)
+            print_task_detail(task, True, None, ui)
 
     return 0

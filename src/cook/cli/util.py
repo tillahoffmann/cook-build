@@ -9,6 +9,7 @@ from pathlib import Path
 
 from ..store import TaskRecord
 from ..task import Task
+from ..ui import Output, Style
 
 
 def load_recipe(recipe_path: str) -> None:
@@ -101,10 +102,13 @@ def format_relative_time(dt: datetime) -> str:
     return f"{days}d ago"
 
 
-def print_task_detail(task: Task, stale: bool, record: TaskRecord | None) -> None:
+def print_task_detail(
+    task: Task, stale: bool, record: TaskRecord | None, ui: Output | None = None
+) -> None:
     from ..task import ShellTask
 
-    status = "STALE" if stale else "up-to-date"
+    style = ui.style if ui is not None else Style(False)
+    status = style.red("STALE") if stale else style.green("up-to-date")
     print(f"[{task.name}] {status}")
 
     # Dependencies

@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .executor import Executor
 from .store import BuildStore, FileDigestCache, TaskRecord
 from .task import Task
+from .ui import Output, Verbosity
 
 
 class TaskOutputError(Exception):
@@ -149,19 +151,40 @@ class Scheduler:
         store: BuildStore,
         executor: Executor,
         keep_going: bool = False,
+        ui: Output | None = None,
+        stream: bool = False,
     ) -> None:
         self._store = store
         self._executor = executor
+        self._executor.stream = stream
         self._keep_going = keep_going
+        self._ui = ui or Output(verbosity=Verbosity.NORMAL)
         self._futures: dict[str, asyncio.Future[None]] = {}
         self._failed: set[str] = set()
         self._errors: list[Exception] = []
         self._file_cache = FileDigestCache()
+        # Counters for summary
+        self._cooked = 0
+        self._fresh = 0
+        self._skipped = 0
+        self._task_failures = 0
 
     async def run(self, targets: list[Task]) -> None:
         self._futures = {}
         self._failed = set()
         self._errors = []
+        self._cooked = 0
+        self._fresh = 0
+        self._skipped = 0
+        self._task_failures = 0
+
+        # Count total tasks for progress counter
+        from .cli.util import collect_transitive
+
+        all_tasks = collect_transitive(targets)
+        self._ui.set_total(len(all_tasks))
+
+        build_start = time.monotonic()
 
         # Always use return_exceptions=True to avoid gather cancelling
         # in-flight subprocess tasks (which can deadlock asyncio.run shutdown).
@@ -172,6 +195,16 @@ class Scheduler:
             if isinstance(r, Exception):
                 if not any(r is e for e in self._errors):
                     self._errors.append(r)
+
+        build_elapsed = time.monotonic() - build_start
+        self._ui.summary(
+            cooked=self._cooked,
+            fresh=self._fresh,
+            failed=self._task_failures,
+            skipped=self._skipped,
+            elapsed=build_elapsed,
+        )
+
         if self._errors:
             if self._keep_going:
                 raise BuildError(self._errors)
@@ -218,6 +251,8 @@ class Scheduler:
             if self._keep_going:
                 failed_dep = next(d for d in deps if d.task_id in self._failed)
                 self._failed.add(task.task_id)
+                self._skipped += 1
+                self._ui.task_skipped(task.name, failed_dep.task_id)
                 err = DependencyFailedError(task, failed_dep.task_id)
                 self._errors.append(err)
                 raise err
@@ -231,19 +266,29 @@ class Scheduler:
             record = self._store.get(task.task_id)
             if record is not None and record.digest == effective:
                 if all(Path(o).resolve().exists() for o in task.outputs):
-                    print(f"[{task.name}] up-to-date")
+                    self._fresh += 1
+                    self._ui.task_fresh(task.name)
                     return
 
         # 5. Execute
-        print(f"[{task.name}] started")
         started_at = datetime.now(timezone.utc)
         try:
             await self._executor.execute(task)
         except Exception as exc:
             failed_at = datetime.now(timezone.utc)
             elapsed = (failed_at - started_at).total_seconds()
-            print(f"[{task.name}] FAILED ({elapsed:.1f}s)")
-            print(f"    {exc}")
+            self._task_failures += 1
+
+            # Build error output from the exception
+            from .executor import TaskExecutionError
+
+            output = ""
+            if isinstance(exc, TaskExecutionError):
+                output = exc.stderr or exc.stdout
+            else:
+                output = str(exc)
+
+            self._ui.task_failed(task.name, elapsed, output)
             self._failed.add(task.task_id)
             self._store.save(
                 TaskRecord(
@@ -268,8 +313,8 @@ class Scheduler:
             ]
             if missing:
                 err = TaskOutputError(task, missing)
-                print(f"[{task.name}] FAILED ({elapsed:.1f}s)")
-                print(f"    {err}")
+                self._task_failures += 1
+                self._ui.task_failed(task.name, elapsed, str(err))
                 self._failed.add(task.task_id)
                 self._store.save(
                     TaskRecord(
@@ -282,9 +327,10 @@ class Scheduler:
                 )
                 raise err
 
-        print(f"[{task.name}] completed ({elapsed:.1f}s)")
+        self._cooked += 1
+        self._ui.task_cooked(task.name, elapsed)
 
-        # 7. Store record (recompute digest — same value since outputs aren't in digest)
+        # 7. Store record
         if effective is not None:
             self._store.save(
                 TaskRecord(

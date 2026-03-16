@@ -84,14 +84,14 @@ async def test_skipping_up_to_date(
     )
     sched = Scheduler(store, executor)
     await sched.run([task])
-    assert "started" in capsys.readouterr().out
+    assert "Cooked" in capsys.readouterr().err
 
     # Run again — should skip
     sched2 = Scheduler(store, executor)
     await sched2.run([task])
-    captured = capsys.readouterr().out
-    assert "up-to-date" in captured
-    assert "started" not in captured
+    captured = capsys.readouterr().err
+    assert "Fresh" in captured
+    assert "Cooked" not in captured
 
 
 async def test_staleness_on_input_change(
@@ -118,8 +118,8 @@ async def test_staleness_on_input_change(
     sched2 = Scheduler(store, executor)
     await sched2.run([task])
     assert outfile.read_text().strip() == "v2"
-    captured = capsys.readouterr().out
-    assert "started" in captured
+    captured = capsys.readouterr().err
+    assert "Cooked" in captured
 
 
 async def test_staleness_on_command_change(
@@ -146,7 +146,7 @@ async def test_staleness_on_command_change(
     sched2 = Scheduler(store, executor)
     await sched2.run([task2])
     assert outfile.read_text().strip() == "v2"
-    assert "started" in capsys.readouterr().out
+    assert "Cooked" in capsys.readouterr().err
 
 
 async def test_missing_output_forces_rebuild(
@@ -168,8 +168,8 @@ async def test_missing_output_forces_rebuild(
     outfile.unlink()
     sched2 = Scheduler(store, executor)
     await sched2.run([task])
-    captured = capsys.readouterr().out
-    assert "started" in captured
+    captured = capsys.readouterr().err
+    assert "Cooked" in captured
     assert outfile.exists()
 
 
@@ -192,8 +192,8 @@ async def test_no_output_tasks_always_run(
     # New scheduler to clear dedup cache
     sched2 = Scheduler(store, executor)
     await sched2.run([task])
-    captured = capsys.readouterr().out
-    assert captured.count("started") >= 2
+    captured = capsys.readouterr().err
+    assert captured.count("Cooked") >= 2
 
 
 async def test_none_propagation(
@@ -216,9 +216,9 @@ async def test_none_propagation(
 
     sched2 = Scheduler(store, executor)
     await sched2.run([task_b])
-    captured = capsys.readouterr().out
+    captured = capsys.readouterr().err
     # Both A and B should run both times (None propagation)
-    assert captured.count("[downstream] started") >= 2
+    assert captured.count("downstream") >= 2
 
 
 async def test_output_validation(
@@ -290,9 +290,9 @@ async def test_deduplication_diamond(
     )
     sched = Scheduler(store, executor)
     await sched.run([task_a])
-    captured = capsys.readouterr().out
-    # D should only be started once
-    assert captured.count("[D] started") == 1
+    captured = capsys.readouterr().err
+    # D should only be cooked once
+    assert captured.count("Cooked  D") == 1
     # Counter should be 1 (only incremented once)
     assert counter.read_text().strip() == "1"
 
@@ -377,8 +377,8 @@ async def test_intermediate_file_hashing(
     sched2 = Scheduler(store, executor)
     await sched2.run([task_b2])
     assert final.read_text().strip() == "v2"
-    captured = capsys.readouterr().out
-    assert "[consume] started" in captured
+    captured = capsys.readouterr().err
+    assert "Cooked  consume" in captured
 
 
 async def test_parallel_execution(
@@ -484,11 +484,11 @@ async def test_dep_with_outputs_but_no_record(
     )
     sched = Scheduler(store, executor)
     await sched.run([task_c])
-    captured = capsys.readouterr().out
-    # All three should have started (none skipped due to None propagation)
-    assert "[no-out-root] started" in captured
-    assert "[mid-with-out] started" in captured
-    assert "[end-with-out] started" in captured
+    captured = capsys.readouterr().err
+    # All three should have run (none skipped due to None propagation)
+    assert "no-out-root" in captured
+    assert "mid-with-out" in captured
+    assert "end-with-out" in captured
     # No record stored for B (None effective digest)
     assert store.get("mid-with-out") is None
 

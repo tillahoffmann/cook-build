@@ -86,10 +86,10 @@ def c_project(tmp_path: Path) -> Path:
 def test_first_build_all_tasks_run(c_project: Path) -> None:
     result = _run(["exec", "*"], c_project)
     assert result.returncode == 0, result.stderr
-    assert "compile-bar" in result.stdout
-    assert "compile-foo" in result.stdout
-    assert "link" in result.stdout
-    assert "started" in result.stdout
+    assert "compile-bar" in result.stderr
+    assert "compile-foo" in result.stderr
+    assert "link" in result.stderr
+    assert "Cooked" in result.stderr
     # Outputs created
     assert (c_project / "src" / "bar.o").exists()
     assert (c_project / "src" / "foo.o").exists()
@@ -104,9 +104,9 @@ def test_incremental_no_changes(c_project: Path) -> None:
     # Second build: everything up-to-date
     r2 = _run(["exec", "*"], c_project)
     assert r2.returncode == 0, r2.stderr
-    assert "up-to-date" in r2.stdout
-    # No "started" in second run
-    assert "started" not in r2.stdout
+    assert "Fresh" in r2.stderr
+    # No "Cooked" in second run
+    assert "Cooked" not in r2.stderr
 
 
 def test_source_change_selective_rebuild(c_project: Path) -> None:
@@ -121,9 +121,9 @@ def test_source_change_selective_rebuild(c_project: Path) -> None:
     # Second build: compile-foo and link re-run, compile-bar skipped
     r2 = _run(["exec", "*"], c_project)
     assert r2.returncode == 0, r2.stderr
-    assert "[compile-foo] started" in r2.stdout
-    assert "[link] started" in r2.stdout
-    assert "[compile-bar] up-to-date" in r2.stdout
+    assert "Cooked  compile-foo" in r2.stderr
+    assert "Cooked  link" in r2.stderr
+    assert "Fresh   compile-bar" in r2.stderr
 
 
 def test_output_deleted_rebuild(c_project: Path) -> None:
@@ -137,7 +137,7 @@ def test_output_deleted_rebuild(c_project: Path) -> None:
     # Second build: compile-foo re-runs
     r2 = _run(["exec", "*"], c_project)
     assert r2.returncode == 0, r2.stderr
-    assert "[compile-foo] started" in r2.stdout
+    assert "Cooked  compile-foo" in r2.stderr
     assert (c_project / "src" / "foo.o").exists()
 
 
@@ -155,14 +155,14 @@ def test_inspect_after_build(c_project: Path) -> None:
     _run(["exec", "*"], c_project, check=True)
     result = _run(["inspect", "*"], c_project)
     assert result.returncode == 0, result.stderr
-    assert "up-to-date" in result.stdout
+    assert "up-to-date" in result.stdout  # inspect to stdout
 
 
 def test_dry_run_before_build(c_project: Path) -> None:
     """Dry run with no store: everything is stale."""
     result = _run(["exec", "--dry-run", "*"], c_project)
     assert result.returncode == 0, result.stderr
-    assert "STALE (would run)" in result.stdout
+    assert "STALE (would run)" in result.stderr
     # Nothing should be created
     assert not (c_project / "src" / "foo.o").exists()
 
@@ -173,8 +173,8 @@ def test_dry_run_after_build(c_project: Path) -> None:
 
     result = _run(["exec", "--dry-run", "*"], c_project)
     assert result.returncode == 0, result.stderr
-    assert "up-to-date" in result.stdout
-    assert "STALE" not in result.stdout
+    assert "up-to-date" in result.stderr
+    assert "STALE" not in result.stderr
 
 
 def test_dry_run_missing_output(c_project: Path) -> None:
@@ -186,7 +186,7 @@ def test_dry_run_missing_output(c_project: Path) -> None:
 
     result = _run(["exec", "--dry-run", "*"], c_project)
     assert result.returncode == 0, result.stderr
-    assert "[compile-foo] STALE (would run)" in result.stdout
+    assert "[compile-foo] STALE (would run)" in result.stderr
     # foo.o should NOT be recreated (dry-run)
     assert not (c_project / "src" / "foo.o").exists()
 
@@ -198,21 +198,21 @@ def test_invalidate_forces_rerun(c_project: Path) -> None:
     # Invalidate compile-foo
     r_inv = _run(["invalidate", "compile-foo"], c_project)
     assert r_inv.returncode == 0, r_inv.stderr
-    assert "Invalidated [compile-foo]" in r_inv.stdout
+    assert "Invalidated [compile-foo]" in r_inv.stderr
 
     # Re-run: compile-foo should re-run
     r2 = _run(["exec", "*"], c_project)
     assert r2.returncode == 0, r2.stderr
-    assert "[compile-foo] started" in r2.stdout
+    assert "Cooked  compile-foo" in r2.stderr
 
 
 def test_pattern_matching_only_compile(c_project: Path) -> None:
     result = _run(["exec", "compile-*"], c_project)
     assert result.returncode == 0, result.stderr
-    assert "[compile-foo] started" in result.stdout
-    assert "[compile-bar] started" in result.stdout
+    assert "Cooked  compile-foo" in result.stderr
+    assert "Cooked  compile-bar" in result.stderr
     # link should NOT appear
-    assert "link" not in result.stdout
+    assert "link" not in result.stderr
 
 
 def test_always_run_task_no_outputs(tmp_path: Path) -> None:
@@ -228,12 +228,12 @@ def test_always_run_task_no_outputs(tmp_path: Path) -> None:
     # First run
     r1 = _run(["exec", "check"], tmp_path)
     assert r1.returncode == 0, r1.stderr
-    assert "[check] started" in r1.stdout
+    assert "Cooked  check" in r1.stderr
 
     # Second run: still runs (no outputs = always-run)
     r2 = _run(["exec", "check"], tmp_path)
     assert r2.returncode == 0, r2.stderr
-    assert "[check] started" in r2.stdout
+    assert "Cooked  check" in r2.stderr
 
 
 def test_none_propagation_always_run_dep(tmp_path: Path) -> None:
@@ -251,14 +251,14 @@ def test_none_propagation_always_run_dep(tmp_path: Path) -> None:
     # First run
     r1 = _run(["exec", "*"], tmp_path)
     assert r1.returncode == 0, r1.stderr
-    assert "[check] started" in r1.stdout
-    assert "[build] started" in r1.stdout
+    assert "Cooked  check" in r1.stderr
+    assert "Cooked  build" in r1.stderr
 
     # Second run: both re-run because check has no outputs (None propagation)
     r2 = _run(["exec", "*"], tmp_path)
     assert r2.returncode == 0, r2.stderr
-    assert "[check] started" in r2.stdout
-    assert "[build] started" in r2.stdout
+    assert "Cooked  check" in r2.stderr
+    assert "Cooked  build" in r2.stderr
 
 
 def test_command_change_triggers_rebuild(c_project: Path) -> None:
@@ -296,8 +296,8 @@ def test_command_change_triggers_rebuild(c_project: Path) -> None:
     # Rebuild: compile tasks should re-run due to command change
     r2 = _run(["exec", "*"], c_project)
     assert r2.returncode == 0, r2.stderr
-    assert "[compile-foo] started" in r2.stdout
-    assert "[compile-bar] started" in r2.stdout
+    assert "Cooked  compile-foo" in r2.stderr
+    assert "Cooked  compile-bar" in r2.stderr
 
 
 # ---------------------------------------------------------------------------
@@ -321,7 +321,7 @@ def test_keep_going_both_attempted(tmp_path: Path) -> None:
     r_k = _run(["exec", "-k", "*"], tmp_path)
     assert r_k.returncode == 1
     assert good_out.exists()
-    assert "FAILED" in r_k.stdout
+    assert "FAILED" in r_k.stderr
 
 
 def test_without_keep_going_fails(tmp_path: Path) -> None:
@@ -361,7 +361,7 @@ def test_validation_error_cycle(tmp_path: Path) -> None:
 
     result = _run(["exec", "*"], tmp_path)
     assert result.returncode == 1
-    assert "cycle" in result.stdout.lower()
+    assert "cycle" in result.stderr.lower()
 
 
 def test_validation_error_duplicate_outputs(tmp_path: Path) -> None:
@@ -377,7 +377,7 @@ def test_validation_error_duplicate_outputs(tmp_path: Path) -> None:
 
     result = _run(["exec", "*"], tmp_path)
     assert result.returncode == 1
-    assert "duplicate output" in result.stdout.lower()
+    assert "duplicate output" in result.stderr.lower()
 
 
 def test_validation_error_unregistered_dep(tmp_path: Path) -> None:
@@ -393,7 +393,7 @@ def test_validation_error_unregistered_dep(tmp_path: Path) -> None:
 
     result = _run(["exec", "*"], tmp_path)
     assert result.returncode == 1
-    assert "not registered" in result.stdout.lower()
+    assert "not registered" in result.stderr.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -438,13 +438,13 @@ def test_no_pattern_no_default_errors(tmp_path: Path) -> None:
 
     result = _run(["exec"], tmp_path)
     assert result.returncode == 1
-    assert "no target pattern" in result.stdout.lower()
+    assert "no target pattern" in result.stderr.lower()
 
 
 def test_no_recipe_file_errors(tmp_path: Path) -> None:
     result = _run(["exec", "*"], tmp_path)
     assert result.returncode == 1
-    assert "recipe" in result.stdout.lower()
+    assert "recipe" in result.stderr.lower()
 
 
 def test_dry_run_no_store(tmp_path: Path) -> None:
@@ -461,5 +461,5 @@ def test_dry_run_no_store(tmp_path: Path) -> None:
 
     result = _run(["exec", "--dry-run", "*"], tmp_path)
     assert result.returncode == 0, result.stderr
-    assert "STALE (would run)" in result.stdout
+    assert "STALE (would run)" in result.stderr
     assert not outfile.exists()

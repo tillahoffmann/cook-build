@@ -11,12 +11,16 @@ from ..task import Task
 
 
 class TaskExecutionError(Exception):
-    def __init__(self, task: Task, returncode: int, stderr: str) -> None:
+    def __init__(
+        self, task: Task, returncode: int, stderr: str, stdout: str = ""
+    ) -> None:
         self.task = task
         self.returncode = returncode
         self.stderr = stderr
+        self.stdout = stdout
+        output = stderr or stdout
         super().__init__(
-            f"Task {task.name!r} failed with return code {returncode}:\n{stderr}"
+            f"Task {task.name!r} failed with return code {returncode}:\n{output}"
         )
 
 
@@ -31,8 +35,9 @@ class Executor(ABC):
         # Each subclass gets its own copy of the parent's handlers
         cls._handlers = dict(cls._handlers)
 
-    def __init__(self, max_concurrent: int) -> None:
+    def __init__(self, max_concurrent: int, stream: bool = False) -> None:
         self._semaphore = asyncio.Semaphore(max_concurrent)
+        self.stream = stream
 
     @classmethod
     @abstractmethod

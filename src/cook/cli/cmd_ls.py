@@ -8,10 +8,11 @@ from ..context import Context
 from ..scheduler import is_stale
 from ..store import FileDigestCache
 from ..store.sqlite import SqliteBuildStore
+from ..ui import Output
 from .util import match_targets
 
 
-def cmd_ls(args: argparse.Namespace, config: Config, ctx: Context) -> int:
+def cmd_ls(args: argparse.Namespace, config: Config, ctx: Context, ui: Output) -> int:
     if args.pattern:
         tasks = match_targets(ctx.tasks, args.pattern, config.default, args.regex)
     else:

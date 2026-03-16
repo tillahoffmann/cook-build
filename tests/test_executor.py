@@ -171,6 +171,21 @@ async def test_stderr_invalid_utf8() -> None:
     assert isinstance(exc_info.value.stderr, str)
 
 
+async def test_stream_mode_passes_through() -> None:
+    executor = LocalExecutor(stream=True)
+    task = ShellTask(name="stream-ok", cmd="echo hello")
+    await executor.execute(task)
+
+
+async def test_stream_mode_failure() -> None:
+    executor = LocalExecutor(stream=True)
+    task = ShellTask(name="stream-fail", cmd="exit 1")
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await executor.execute(task)
+    assert exc_info.value.returncode == 1
+    assert "streamed to terminal" in exc_info.value.stderr
+
+
 # --- LocalConfig ---
 
 

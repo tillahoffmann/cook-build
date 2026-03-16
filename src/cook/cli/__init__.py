@@ -9,6 +9,7 @@ from ..context import Context
 from ..executor import TaskExecutionError, get_executor
 from ..executor.slurm import PollTimeoutError
 from ..scheduler import BuildError, TaskOutputError
+from ..ui import Output, Verbosity
 from .cmd_exec import cmd_exec
 from .cmd_inspect import cmd_inspect
 from .cmd_invalidate import cmd_invalidate
@@ -24,6 +25,16 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "-f", "--file", default=None, help="Recipe file (default: from config)"
+    )
+    parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Show detailed output"
+    )
+    parser.add_argument("-q", "--quiet", action="store_true", help="Only show errors")
+    parser.add_argument(
+        "--color",
+        choices=["auto", "always", "never"],
+        default="auto",
+        help="Color output (default: auto)",
     )
     sub = parser.add_subparsers(dest="command")
 
@@ -43,6 +54,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     exec_p.add_argument(
         "-r", "--re", action="store_true", dest="regex", help="Use regex matching"
+    )
+    exec_p.add_argument(
+        "-s",
+        "--stream",
+        action="store_true",
+        help="Stream task output to terminal (no capture)",
     )
 
     inspect_p = sub.add_parser("inspect", help="Show dependency graph and staleness")
@@ -81,6 +98,28 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _make_output(args: argparse.Namespace) -> Output:
+    if args.verbose and args.quiet:
+        raise ValueError("Cannot use --verbose and --quiet together")
+    if args.verbose:
+        verbosity = Verbosity.VERBOSE
+    elif args.quiet:
+        verbosity = Verbosity.QUIET
+    else:
+        verbosity = Verbosity.NORMAL
+
+    color: bool | None = None
+    if args.color == "always":
+        color = True
+    elif args.color == "never":
+        color = False
+
+    return Output(verbosity=verbosity, color=color)
+
+
+HandlerFn = Callable[[argparse.Namespace, Config, Context, Output], int]
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -89,7 +128,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 1
 
-    handlers: dict[str, Callable[[argparse.Namespace, Config, Context], int]] = {
+    handlers: dict[str, HandlerFn] = {
         "exec": cmd_exec,
         "inspect": cmd_inspect,
         "invalidate": cmd_invalidate,
@@ -98,18 +137,24 @@ def main(argv: list[str] | None = None) -> int:
     }
 
     try:
+        ui = _make_output(args)
+    except ValueError as e:
+        print(f"Error: {e}", file=__import__("sys").stderr)
+        return 1
+
+    try:
         config = load_config(Path(args.config) if args.config else None)
         if args.file is not None:
             config.recipe = args.file
     except (ConfigError, FileNotFoundError) as e:
-        print(f"Error: {e}")
+        ui.error(str(e))
         return 1
 
     with Context() as ctx:
         try:
             load_recipe(config.recipe)
         except Exception as e:
-            print(f"Error loading recipe: {e}")
+            ui.error(f"loading recipe: {e}")
             return 1
 
         try:
@@ -123,7 +168,7 @@ def main(argv: list[str] | None = None) -> int:
                 executor_cls = None
             if executor_cls is not None:
                 executor_cls.validate_tasks(ctx.tasks)
-            return handlers[args.command](args, config, ctx)
+            return handlers[args.command](args, config, ctx, ui)
         except (
             ValueError,
             ConfigError,
@@ -133,5 +178,5 @@ def main(argv: list[str] | None = None) -> int:
             TaskOutputError,
             FileNotFoundError,
         ) as e:
-            print(f"Error: {e}")
+            ui.error(str(e))
             return 1

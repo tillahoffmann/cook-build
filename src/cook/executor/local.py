@@ -29,8 +29,8 @@ class LocalConfig:
 
 @register_executor("local")
 class LocalExecutor(Executor):
-    def __init__(self, max_concurrent: int = 1) -> None:
-        super().__init__(max_concurrent)
+    def __init__(self, max_concurrent: int = 1, stream: bool = False) -> None:
+        super().__init__(max_concurrent, stream=stream)
 
     @classmethod
     def from_config(
@@ -43,16 +43,34 @@ class LocalExecutor(Executor):
 @LocalExecutor.register_handler(task_type=ShellTask)
 async def _handle_shell_task(executor: Executor, task: Task) -> None:
     assert isinstance(task, ShellTask)
-    proc = await asyncio.create_subprocess_shell(
-        task.cmd,
-        cwd=task.cwd,
-        env=task.env,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    _, stderr = await proc.communicate()
-    if proc.returncode:
-        raise TaskExecutionError(
-            task=task,
-            returncode=proc.returncode,
-            stderr=stderr.decode(errors="replace") if stderr else "",
+    if executor.stream:
+        # Pass-through mode: no capture, output goes directly to terminal
+        proc = await asyncio.create_subprocess_shell(
+            task.cmd,
+            cwd=task.cwd,
+            env=task.env,
         )
+        await proc.communicate()
+        if proc.returncode:
+            raise TaskExecutionError(
+                task=task,
+                returncode=proc.returncode,
+                stderr="(output was streamed to terminal)",
+            )
+    else:
+        # Capture mode: capture both stdout and stderr
+        proc = await asyncio.create_subprocess_shell(
+            task.cmd,
+            cwd=task.cwd,
+            env=task.env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout_bytes, stderr_bytes = await proc.communicate()
+        if proc.returncode:
+            raise TaskExecutionError(
+                task=task,
+                returncode=proc.returncode,
+                stderr=stderr_bytes.decode(errors="replace") if stderr_bytes else "",
+                stdout=stdout_bytes.decode(errors="replace") if stdout_bytes else "",
+            )

@@ -118,7 +118,7 @@ def test_exec_regex_invalid(project: Path, capsys: pytest.CaptureFixture[str]) -
     )
     rc = main(["exec", "--re", "[invalid"])
     assert rc == 1
-    assert "Invalid regex" in capsys.readouterr().out
+    assert "Invalid regex" in capsys.readouterr().err
 
 
 def test_exec_with_default_config(
@@ -152,7 +152,7 @@ def test_exec_no_pattern_no_default(
     )
     rc = main(["exec"])
     assert rc == 1
-    assert "No target pattern" in capsys.readouterr().out
+    assert "No target pattern" in capsys.readouterr().err
 
 
 def test_exec_no_matches(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -166,7 +166,7 @@ def test_exec_no_matches(project: Path, capsys: pytest.CaptureFixture[str]) -> N
     )
     rc = main(["exec", "nonexistent-*"])
     assert rc == 1
-    assert "matched no tasks" in capsys.readouterr().out
+    assert "matched no tasks" in capsys.readouterr().err
 
 
 def test_exec_dry_run(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -181,7 +181,7 @@ def test_exec_dry_run(project: Path, capsys: pytest.CaptureFixture[str]) -> None
     )
     rc = main(["exec", "--dry-run", "build"])
     assert rc == 0
-    captured = capsys.readouterr().out
+    captured = capsys.readouterr().err
     assert "STALE (would run)" in captured
     # File should NOT be created
     assert not outfile.exists()
@@ -207,7 +207,7 @@ def test_exec_dry_run_with_existing_store(
     # Now dry run should show up-to-date
     rc = main(["exec", "--dry-run", "build"])
     assert rc == 0
-    captured = capsys.readouterr().out
+    captured = capsys.readouterr().err
     assert "up-to-date" in captured
 
 
@@ -344,14 +344,14 @@ def test_invalidate(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     # Invalidate
     rc = main(["invalidate", "mytask"])
     assert rc == 0
-    captured = capsys.readouterr().out
+    captured = capsys.readouterr().err
     assert "Invalidated [mytask]" in captured
 
     # Run again — should re-execute (not up-to-date)
     rc = main(["exec", "mytask"])
     assert rc == 0
-    captured = capsys.readouterr().out
-    assert "started" in captured
+    captured = capsys.readouterr().err
+    assert "Cooked" in captured
 
 
 def test_invalidate_no_store(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -366,7 +366,7 @@ def test_invalidate_no_store(project: Path, capsys: pytest.CaptureFixture[str]) 
     )
     rc = main(["invalidate", "t"])
     assert rc == 0
-    assert "nothing to invalidate" in capsys.readouterr().out.lower()
+    assert "nothing to invalidate" in capsys.readouterr().err.lower()
 
 
 def test_keep_going(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -402,7 +402,7 @@ def test_validation_error_cycle(
     )
     rc = main(["exec", "*"])
     assert rc == 1
-    captured = capsys.readouterr().out
+    captured = capsys.readouterr().err
     assert "cycle" in captured.lower()
 
 
@@ -415,16 +415,16 @@ def test_recipe_import_error(project: Path, capsys: pytest.CaptureFixture[str]) 
     )
     rc = main(["exec", "*"])
     assert rc == 1
-    captured = capsys.readouterr().out
-    assert "Error loading recipe" in captured
+    captured = capsys.readouterr().err
+    assert "error: loading recipe" in captured
 
 
 def test_recipe_not_found(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     # No recipe.py created
     rc = main(["exec", "*"])
     assert rc == 1
-    captured = capsys.readouterr().out
-    assert "Error loading recipe" in captured
+    captured = capsys.readouterr().err
+    assert "error: loading recipe" in captured
 
 
 def test_exit_code_success(project: Path) -> None:
@@ -521,7 +521,7 @@ def test_dry_run_does_not_modify_store(
     outfile.unlink()
     rc = main(["exec", "--dry-run", "build"])
     assert rc == 0
-    assert "STALE" in capsys.readouterr().out
+    assert "STALE" in capsys.readouterr().err
 
     # Store record should be unchanged
     with SqliteBuildStore(str(project / ".cook.db")) as store:
@@ -543,7 +543,7 @@ def test_dry_run_short_flag(project: Path, capsys: pytest.CaptureFixture[str]) -
     )
     rc = main(["exec", "-n", "build"])
     assert rc == 0
-    captured = capsys.readouterr().out
+    captured = capsys.readouterr().err
     assert "STALE (would run)" in captured
     assert not outfile.exists()
 
@@ -561,7 +561,7 @@ def test_unknown_executor_flag(
     )
     rc = main(["exec", "--executor", "nosuch", "t"])
     assert rc == 1
-    assert "unknown executor" in capsys.readouterr().out.lower()
+    assert "unknown executor" in capsys.readouterr().err.lower()
 
 
 def test_executor_short_flag(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -575,7 +575,7 @@ def test_executor_short_flag(project: Path, capsys: pytest.CaptureFixture[str]) 
     )
     rc = main(["exec", "-x", "nosuch", "t"])
     assert rc == 1
-    assert "unknown executor" in capsys.readouterr().out.lower()
+    assert "unknown executor" in capsys.readouterr().err.lower()
 
 
 def test_unknown_executor_config(
@@ -592,7 +592,7 @@ def test_unknown_executor_config(
     )
     rc = main(["exec", "t"])
     assert rc == 1
-    assert "unknown executor" in capsys.readouterr().out.lower()
+    assert "unknown executor" in capsys.readouterr().err.lower()
 
 
 def test_exec_slurm_executor_config(
@@ -614,7 +614,7 @@ def test_exec_slurm_executor_config(
     # sbatch is not available locally, so task fails — but the slurm branch is exercised
     rc = main(["exec", "t"])
     assert rc == 1
-    output = capsys.readouterr().out.lower()
+    output = capsys.readouterr().err.lower()
     assert "sbatch" in output
 
 
@@ -644,8 +644,8 @@ def test_config_error(project: Path, capsys: pytest.CaptureFixture[str]) -> None
     _write_recipe(project, "from cook import get_context\nctx = get_context()\n")
     rc = main(["exec", "*"])
     assert rc == 1
-    captured = capsys.readouterr().out
-    assert "Error" in captured
+    captured = capsys.readouterr().err
+    assert "error" in captured.lower()
 
 
 def test_dry_run_with_deps(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -662,7 +662,7 @@ def test_dry_run_with_deps(project: Path, capsys: pytest.CaptureFixture[str]) ->
     )
     rc = main(["exec", "--dry-run", "leaf"])
     assert rc == 0
-    captured = capsys.readouterr().out
+    captured = capsys.readouterr().err
     assert "[dep] STALE (would run)" in captured
     assert "[leaf] STALE (would run)" in captured
 
@@ -680,7 +680,7 @@ def test_invalidate_no_matches(
     )
     rc = main(["invalidate", "nonexistent-*"])
     assert rc == 1
-    assert "matched no tasks" in capsys.readouterr().out
+    assert "matched no tasks" in capsys.readouterr().err
 
 
 def test_inspect_no_pattern_no_default(
@@ -696,7 +696,7 @@ def test_inspect_no_pattern_no_default(
     )
     rc = main(["inspect"])
     assert rc == 1
-    assert "No target pattern" in capsys.readouterr().out
+    assert "No target pattern" in capsys.readouterr().err
 
 
 def test_inspect_recipe_error(
@@ -705,7 +705,7 @@ def test_inspect_recipe_error(
     _write_recipe(project, "def\n")
     rc = main(["inspect", "*"])
     assert rc == 1
-    assert "Error loading recipe" in capsys.readouterr().out
+    assert "error: loading recipe" in capsys.readouterr().err
 
 
 def test_recipe_runtime_error(
@@ -714,14 +714,14 @@ def test_recipe_runtime_error(
     _write_recipe(project, "raise RuntimeError('boom')\n")
     rc = main(["exec", "*"])
     assert rc == 1
-    assert "Error loading recipe" in capsys.readouterr().out
+    assert "error: loading recipe" in capsys.readouterr().err
 
 
 def test_recipe_name_error(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     _write_recipe(project, "undefined_variable\n")
     rc = main(["exec", "*"])
     assert rc == 1
-    assert "Error loading recipe" in capsys.readouterr().out
+    assert "error: loading recipe" in capsys.readouterr().err
 
 
 def test_invalidate_recipe_error(
@@ -730,7 +730,7 @@ def test_invalidate_recipe_error(
     _write_recipe(project, "def\n")
     rc = main(["invalidate", "*"])
     assert rc == 1
-    assert "Error loading recipe" in capsys.readouterr().out
+    assert "error: loading recipe" in capsys.readouterr().err
 
 
 def test_exec_no_output_task(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -745,8 +745,8 @@ def test_exec_no_output_task(project: Path, capsys: pytest.CaptureFixture[str]) 
     )
     rc = main(["exec", "always-run"])
     assert rc == 0
-    captured = capsys.readouterr().out
-    assert "started" in captured
+    captured = capsys.readouterr().err
+    assert "Cooked" in captured
 
 
 def test_dry_run_no_output_task(
@@ -771,7 +771,7 @@ def test_dry_run_no_output_task(
     # Dry run: always-run has no outputs -> stale, leaf depends on stale dep -> stale
     rc = main(["exec", "--dry-run", "*"])
     assert rc == 0
-    captured = capsys.readouterr().out
+    captured = capsys.readouterr().err
     assert "[always-run] STALE (would run)" in captured
     assert "[leaf] STALE (would run)" in captured
 
@@ -800,7 +800,7 @@ def test_dry_run_missing_output(
     # Dry run should detect it's stale
     rc = main(["exec", "--dry-run", "build"])
     assert rc == 0
-    captured = capsys.readouterr().out
+    captured = capsys.readouterr().err
     assert "STALE (would run)" in captured
 
 
@@ -823,7 +823,7 @@ def test_dry_run_staleness_cache(
     )
     rc = main(["exec", "--dry-run", "*"])
     assert rc == 0
-    captured = capsys.readouterr().out
+    captured = capsys.readouterr().err
     assert "[shared] STALE (would run)" in captured
 
 
@@ -893,7 +893,7 @@ def test_dry_run_no_record_in_store(
 
     rc = main(["exec", "--dry-run", "new-task"])
     assert rc == 0
-    captured = capsys.readouterr().out
+    captured = capsys.readouterr().err
     assert "STALE (would run)" in captured
 
 
@@ -932,7 +932,7 @@ def test_dry_run_detects_modified_source(
     # Dry run should detect staleness
     rc = main(["exec", "--dry-run", "build"])
     assert rc == 0
-    captured = capsys.readouterr().out
+    captured = capsys.readouterr().err
     assert "STALE (would run)" in captured
 
 
@@ -941,7 +941,7 @@ def test_validate_bad_recipe(project: Path, capsys: pytest.CaptureFixture[str]) 
     _write_recipe(project, "raise RuntimeError('boom')")
     rc = main(["validate", "*"])
     assert rc == 1
-    assert "Error loading recipe" in capsys.readouterr().out
+    assert "error: loading recipe" in capsys.readouterr().err  # validate bad recipe
 
 
 def test_validate_marks_task_up_to_date(
@@ -960,13 +960,13 @@ def test_validate_marks_task_up_to_date(
     )
     rc = main(["validate", "build"])
     assert rc == 0
-    captured = capsys.readouterr().out
+    captured = capsys.readouterr().err
     assert "[build] validated" in captured
 
     # Now dry-run should show up-to-date
     rc = main(["exec", "--dry-run", "build"])
     assert rc == 0
-    captured = capsys.readouterr().out
+    captured = capsys.readouterr().err
     assert "up-to-date" in captured
 
 
@@ -984,7 +984,7 @@ def test_validate_skips_no_output_task(
     )
     rc = main(["validate", "check"])
     assert rc == 0
-    captured = capsys.readouterr().out
+    captured = capsys.readouterr().err
     assert "[check] skipped" in captured
     assert "no outputs" in captured
 
@@ -1003,7 +1003,7 @@ def test_validate_skips_missing_outputs(
     )
     rc = main(["validate", "build"])
     assert rc == 0
-    captured = capsys.readouterr().out
+    captured = capsys.readouterr().err
     assert "[build] skipped" in captured
     assert "missing outputs" in captured
 
@@ -1030,14 +1030,14 @@ def test_validate_with_deps(project: Path, capsys: pytest.CaptureFixture[str]) -
     )
     rc = main(["validate", "main"])
     assert rc == 0
-    captured = capsys.readouterr().out
+    captured = capsys.readouterr().err
     assert "[dep] validated" in captured
     assert "[main] validated" in captured
 
     # Both should be up-to-date now
     rc = main(["exec", "--dry-run", "*"])
     assert rc == 0
-    captured = capsys.readouterr().out
+    captured = capsys.readouterr().err
     assert "up-to-date" in captured
     assert "STALE" not in captured
 
@@ -1180,7 +1180,7 @@ def test_ls_recipe_error(project: Path, capsys: pytest.CaptureFixture[str]) -> N
     _write_recipe(project, "raise RuntimeError('boom')")
     rc = main(["ls"])
     assert rc == 1
-    assert "Error loading recipe" in capsys.readouterr().out
+    assert "error: loading recipe" in capsys.readouterr().err  # ls recipe error
 
 
 def test_ls_pattern_no_match(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -1194,7 +1194,7 @@ def test_ls_pattern_no_match(project: Path, capsys: pytest.CaptureFixture[str]) 
     )
     rc = main(["ls", "nonexistent-*"])
     assert rc == 1
-    assert "matched no tasks" in capsys.readouterr().out
+    assert "matched no tasks" in capsys.readouterr().err
 
 
 # --- -f / --file flag ---
@@ -1267,7 +1267,7 @@ def test_file_flag_invalidate(
 
     rc = main(["-f", "alt.py", "invalidate", "t"])
     assert rc == 0
-    assert "Invalidated" in capsys.readouterr().out
+    assert "Invalidated" in capsys.readouterr().err
 
 
 def test_file_flag_validate(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -1284,13 +1284,13 @@ def test_file_flag_validate(project: Path, capsys: pytest.CaptureFixture[str]) -
     )
     rc = main(["-f", "alt.py", "validate", "t"])
     assert rc == 0
-    assert "validated" in capsys.readouterr().out
+    assert "validated" in capsys.readouterr().err
 
 
 def test_file_flag_missing(capsys: pytest.CaptureFixture[str]) -> None:
     rc = main(["-f", "nonexistent.py", "ls"])
     assert rc == 1
-    assert "Error loading recipe" in capsys.readouterr().out
+    assert "error: loading recipe" in capsys.readouterr().err  # file flag missing
 
 
 # --- -c / --config flag ---
@@ -1317,7 +1317,7 @@ def test_config_flag(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
 def test_config_flag_missing(capsys: pytest.CaptureFixture[str]) -> None:
     rc = main(["-c", "nonexistent.toml", "ls"])
     assert rc == 1
-    assert "Config file not found" in capsys.readouterr().out
+    assert "Config file not found" in capsys.readouterr().err
 
 
 def test_config_flag_file_overrides(
@@ -1338,3 +1338,83 @@ def test_config_flag_file_overrides(
     rc = main(["-c", str(config), "-f", "flag.py", "ls"])
     assert rc == 0
     assert "from-flag" in capsys.readouterr().out
+
+
+# --- verbosity and color flags ---
+
+
+def test_verbose_flag(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    outfile = project / "out.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="t", cmd="echo ok > {outfile}", outputs=["{outfile}"])
+        """,
+    )
+    rc = main(["-v", "exec", "t"])
+    assert rc == 0
+
+
+def test_quiet_flag(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    outfile = project / "out.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="t", cmd="echo ok > {outfile}", outputs=["{outfile}"])
+        """,
+    )
+    rc = main(["-q", "exec", "t"])
+    assert rc == 0
+    err = capsys.readouterr().err
+    # Quiet mode: no "Cooked" line, but summary still shows
+    assert "Cooked" not in err
+
+
+def test_verbose_and_quiet_conflict(capsys: pytest.CaptureFixture[str]) -> None:
+    rc = main(["-v", "-q", "ls"])
+    assert rc == 1
+    assert "Cannot use --verbose and --quiet" in capsys.readouterr().err
+
+
+def test_color_never(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="t", cmd="true")
+        """,
+    )
+    rc = main(["--color", "never", "ls"])
+    assert rc == 0
+
+
+def test_color_always(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="t", cmd="true")
+        """,
+    )
+    rc = main(["--color", "always", "ls"])
+    assert rc == 0
+
+
+def test_stream_flag(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    outfile = project / "out.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="t", cmd="echo ok > {outfile}", outputs=["{outfile}"])
+        """,
+    )
+    rc = main(["exec", "-s", "t"])
+    assert rc == 0
