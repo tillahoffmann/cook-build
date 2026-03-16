@@ -11,6 +11,7 @@ from ..executor import TaskExecutionError, get_executor
 from ..executor.slurm import PollTimeoutError
 from ..scheduler import BuildError, TaskOutputError
 from ..ui import Output, Verbosity
+from .cmd_build import cmd_build
 from .cmd_exec import cmd_exec
 from .cmd_inspect import cmd_inspect
 from .cmd_invalidate import cmd_invalidate
@@ -57,6 +58,30 @@ def _build_parser() -> argparse.ArgumentParser:
         "-r", "--re", action="store_true", dest="regex", help="Use regex matching"
     )
     exec_p.add_argument(
+        "-s",
+        "--stream",
+        action="store_true",
+        help="Stream task output to terminal (no capture)",
+    )
+
+    build_p = sub.add_parser("build", help="Run tasks that produce matching outputs")
+    build_p.add_argument("pattern", nargs="*")
+    build_p.add_argument(
+        "-n", "--dry-run", action="store_true", help="Show what would run"
+    )
+    build_p.add_argument(
+        "-k", "--keep-going", action="store_true", help="Continue on failure"
+    )
+    build_p.add_argument(
+        "-j", "--jobs", type=int, default=None, help="Number of parallel jobs"
+    )
+    build_p.add_argument(
+        "-x", "--executor", default=None, help="Override executor backend"
+    )
+    build_p.add_argument(
+        "-r", "--re", action="store_true", dest="regex", help="Use regex matching"
+    )
+    build_p.add_argument(
         "-s",
         "--stream",
         action="store_true",
@@ -130,6 +155,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     handlers: dict[str, HandlerFn] = {
+        "build": cmd_build,
         "exec": cmd_exec,
         "inspect": cmd_inspect,
         "invalidate": cmd_invalidate,

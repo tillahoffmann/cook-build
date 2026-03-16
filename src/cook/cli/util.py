@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import fnmatch
 import importlib.util
 import re
@@ -7,6 +8,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ..config import Config
 from ..store import TaskRecord
 from ..task import Task
 from ..ui import Output, Style
@@ -68,6 +70,94 @@ def match_targets(
             f"Pattern(s) {pat_str} matched no tasks. Available tasks: {available}"
         )
     return matched
+
+
+def match_outputs(
+    tasks: dict[str, Task],
+    patterns: list[str],
+    use_regex: bool = False,
+) -> list[Task]:
+    if not patterns:
+        raise ValueError(
+            "No output pattern provided. Specify a pattern: cook build '<pattern>'"
+        )
+    seen: set[str] = set()
+    matched: list[Task] = []
+    for pat in patterns:
+        compiled = None
+        if use_regex:
+            try:
+                compiled = re.compile(pat)
+            except re.error as e:
+                raise ValueError(f"Invalid regex pattern {pat!r}: {e}")
+
+        hits: list[Task] = []
+        for task in tasks.values():
+            for out in task.outputs:
+                out_str = str(out)
+                if compiled is not None:
+                    is_match = compiled.search(out_str) is not None
+                else:
+                    is_match = fnmatch.fnmatch(out_str, pat)
+                if is_match:
+                    hits.append(task)
+                    break
+        if not hits:
+            raise ValueError(
+                f"Output pattern {pat!r} matched no task outputs. "
+                f"Available outputs: {', '.join(sorted(str(o) for t in tasks.values() for o in t.outputs))}"
+            )
+        for t in hits:
+            if t.name not in seen:
+                seen.add(t.name)
+                matched.append(t)
+    return matched
+
+
+def run_targets(
+    targets: list[Task],
+    args: argparse.Namespace,
+    config: Config,
+    ui: Output,
+) -> int:
+    """Shared execution logic for exec and build commands."""
+    import asyncio
+    import sys
+
+    from ..executor import get_executor
+    from ..scheduler import Scheduler, is_stale
+    from ..store import FileDigestCache
+    from ..store.sqlite import SqliteBuildStore
+    from ..transform import collect_transitive
+
+    executor_name = args.executor if args.executor is not None else config.executor
+    executor_cls = get_executor(executor_name)
+
+    if args.dry_run:
+        all_tasks = collect_transitive(targets)
+        db_path = Path(".cook.db")
+        if db_path.exists():
+            cache = FileDigestCache()
+            with SqliteBuildStore(str(db_path)) as store:
+                for task in all_tasks:
+                    stale = is_stale(task, store, cache)
+                    status = "STALE (would run)" if stale else "up-to-date"
+                    print(f"[{task.name}] {status}", file=sys.stderr)
+        else:
+            for task in all_tasks:
+                print(f"[{task.name}] STALE (would run)", file=sys.stderr)
+        return 0
+
+    stream = getattr(args, "stream", False)
+    executor_config = config.executor_configs.get(executor_name, {})
+    executor = executor_cls.from_config(executor_config, args.jobs)
+    with SqliteBuildStore(".cook.db") as store:
+        scheduler = Scheduler(
+            store, executor, keep_going=args.keep_going, ui=ui, stream=stream
+        )
+        asyncio.run(scheduler.run(targets))
+
+    return 0
 
 
 def format_relative_time(dt: datetime) -> str:

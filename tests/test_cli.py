@@ -1421,3 +1421,192 @@ def test_stream_flag(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     )
     rc = main(["exec", "-s", "t"])
     assert rc == 0
+
+
+# --- build command ---
+
+
+def test_build_by_output(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    outfile = project / "result.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="gen", cmd="echo ok > {outfile}", outputs=["{outfile}"])
+        """,
+    )
+    rc = main(["build", str(outfile)])
+    assert rc == 0
+    assert outfile.exists()
+
+
+def test_build_glob_pattern(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    out1 = project / "a.o"
+    out2 = project / "b.o"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="compile-a", cmd="echo a > {out1}", outputs=["{out1}"])
+        ctx.sh(name="compile-b", cmd="echo b > {out2}", outputs=["{out2}"])
+        ctx.sh(name="unrelated", cmd="true")
+        """,
+    )
+    rc = main(["build", "*.o"])
+    assert rc == 0
+    assert out1.exists()
+    assert out2.exists()
+    err = capsys.readouterr().err
+    # Both compile tasks ran, unrelated did not
+    assert "compile-a" in err
+    assert "compile-b" in err
+
+
+def test_build_regex(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    outfile = project / "output.dat"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="gen", cmd="echo ok > {outfile}", outputs=["{outfile}"])
+        """,
+    )
+    rc = main(["build", "-r", r"\.dat$"])
+    assert rc == 0
+    assert outfile.exists()
+
+
+def test_build_no_match(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="t", cmd="true", outputs=["foo.txt"])
+        """,
+    )
+    rc = main(["build", "*.xyz"])
+    assert rc == 1
+    assert "matched no task outputs" in capsys.readouterr().err
+
+
+def test_build_no_pattern(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="t", cmd="true")
+        """,
+    )
+    rc = main(["build"])
+    assert rc == 1
+    assert "No output pattern" in capsys.readouterr().err
+
+
+def test_build_dry_run(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    outfile = project / "out.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="gen", cmd="echo ok > {outfile}", outputs=["{outfile}"])
+        """,
+    )
+    rc = main(["build", "-n", str(outfile)])
+    assert rc == 0
+    assert not outfile.exists()
+    assert "STALE" in capsys.readouterr().err
+
+
+def test_build_dry_run_with_store(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    outfile = project / "out.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="gen", cmd="echo ok > {outfile}", outputs=["{outfile}"])
+        """,
+    )
+    # Build first to create the store
+    rc = main(["build", str(outfile)])
+    assert rc == 0
+    capsys.readouterr()
+
+    # Dry-run should show up-to-date
+    rc = main(["build", "-n", str(outfile)])
+    assert rc == 0
+    assert "up-to-date" in capsys.readouterr().err
+
+
+def test_build_regex_invalid(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="t", cmd="true", outputs=["foo.txt"])
+        """,
+    )
+    rc = main(["build", "-r", "[invalid"])
+    assert rc == 1
+    assert "Invalid regex" in capsys.readouterr().err
+
+
+def test_build_regex_no_match(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="t", cmd="true", outputs=["foo.txt"])
+        """,
+    )
+    rc = main(["build", "-r", r"\.xyz$"])
+    assert rc == 1
+    assert "matched no task outputs" in capsys.readouterr().err
+
+
+def test_build_multiple_patterns(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    out1 = project / "a.o"
+    out2 = project / "b.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="t1", cmd="echo a > {out1}", outputs=["{out1}"])
+        ctx.sh(name="t2", cmd="echo b > {out2}", outputs=["{out2}"])
+        """,
+    )
+    rc = main(["build", "*.o", "*.txt"])
+    assert rc == 0
+    assert out1.exists()
+    assert out2.exists()
+
+
+def test_build_one_pattern_no_match(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="t", cmd="true", outputs=["foo.txt"])
+        """,
+    )
+    rc = main(["build", "*.txt", "*.xyz"])
+    assert rc == 1
+    assert "*.xyz" in capsys.readouterr().err
