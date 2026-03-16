@@ -110,17 +110,20 @@ Subclass `Task` as a dataclass and register a handler with the executor:
 
 ```python
 >>> from dataclasses import dataclass
->>> from cook import Task
+>>> from cook import Task, get_context
 >>> from cook.executor import LocalExecutor
 
 >>> @dataclass
 ... class DownloadTask(Task):
-...     url: str = ""
+...     url: str = "https://example.com"
 
 >>> async def handle_download(executor, task):
 ...     ...  # your logic here
 
 >>> _ = LocalExecutor.register_handler(handle_download, task_type=DownloadTask)
+
+>>> ctx = get_context()
+>>> _ = ctx.register(DownloadTask(name="fetch-data", url="https://example.com/data.csv", outputs=["data.csv"]))
 
 ```
 
