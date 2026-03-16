@@ -118,15 +118,15 @@ The context handles task registration at recipe-load time. It is *not* involved 
 **Recipe usage:**
 
 ```python
-from cook import get_context
+from cook import sh
 
-ctx = get_context()
-
-obj = ctx.sh(name="compile-foo", cmd="gcc -c foo.c -o foo.o",
-             inputs=["foo.c"], outputs=["foo.o"])
-ctx.sh(name="link-foo", cmd="gcc foo.o -o foo",
-       inputs=[obj], outputs=["foo"])
+obj = sh(name="compile-foo", cmd="gcc -c foo.c -o foo.o",
+         inputs=["foo.c"], outputs=["foo.o"])
+sh(name="link-foo", cmd="gcc foo.o -o foo",
+   inputs=[obj], outputs=["foo"])
 ```
+
+The `sh()` function is a convenience wrapper around `get_context().sh()`. For explicit context control (e.g., in tests), use `Context` directly.
 
 **Test usage:**
 
@@ -263,16 +263,23 @@ Since tasks are pure data with explicit dependency references, the DAG is extrac
 
 ## Output
 
-Default output shows task start/complete events with duration:
+All status/progress goes to **stderr**; data output (`ls`, `inspect`) goes to **stdout**.
 
 ```
-[compile-foo] started
-[compile-foo] completed (0.3s)
-[compile-bar] FAILED (0.2s)
-    gcc: error: bar.c: No such file or directory
+[1/5] Cooked  compile-foo (0.3s)
+[2/5] Fresh   compile-bar
+[3/5] Cooked  link (0.1s)
+[4/5] FAILED  test (0.2s)
+         exit code 1
+
+Build failed: 3 cooked, 1 fresh, 1 failed in 0.6s
 ```
 
-Future: `-v` / `-vv` for increasing verbosity.
+Output is controlled by:
+- `-q` / `--quiet` — errors and summary only
+- `-v` / `--verbose` — detailed output including commands
+- `-s` / `--stream` — pass-through mode, no capture (implies `-j1`)
+- `--color=auto|always|never` — color detection respects `NO_COLOR` env
 
 ---
 
@@ -280,25 +287,24 @@ Future: `-v` / `-vv` for increasing verbosity.
 
 ```python
 from pathlib import Path
-from cook import get_context
-
-ctx = get_context()
+from cook import sh, get_context
 
 sources = sorted(Path("src").glob("*.c"))
 objects = []
 for src in sources:
-    objects.append(ctx.sh(
+    objects.append(sh(
         name=f"compile-{src.stem}",
         cmd=f"gcc -c {src} -o {src.with_suffix('.o')}",
         inputs=[str(src)], outputs=[str(src.with_suffix(".o"))],
     ))
 
-ctx.sh(name="link",
-       cmd=f"gcc {' '.join(str(o.outputs[0]) for o in objects)} -o build/app",
-       inputs=objects, outputs=["build/app"])
+sh(name="link",
+   cmd=f"gcc {' '.join(str(o.outputs[0]) for o in objects)} -o build/app",
+   inputs=objects, outputs=["build/app"])
 
-ctx.sh(name="test", cmd="pytest",
-       inputs=[ctx.tasks["link"]] + [str(f) for f in sorted(Path("tests").glob("*.py"))])
+ctx = get_context()
+sh(name="test", cmd="pytest",
+   inputs=[ctx.tasks["link"]] + [str(f) for f in sorted(Path("tests").glob("*.py"))])
 ```
 
 ```

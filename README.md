@@ -8,20 +8,18 @@ Install cook by running `pip install cook-build` or your favorite Python package
 
 ```python
 from pathlib import Path
-from cook import get_context
-
-ctx = get_context()
+from cook import sh
 
 sources = sorted(Path("src").glob("*.c"))
 objects = []
 for src in sources:
-    objects.append(ctx.sh(
+    objects.append(sh(
         name=f"compile-{src.stem}",
         cmd=f"gcc -c {src} -o {src.with_suffix('.o')}",
         inputs=[src], outputs=[src.with_suffix(".o")],
     ))
 
-ctx.sh(
+sh(
     name="link",
     cmd=f"gcc {' '.join(str(o.outputs[0]) for o in objects)} -o build/app",
     inputs=objects, outputs=[Path("build/app")]
@@ -43,21 +41,26 @@ cook exec [pattern]              # run tasks matching glob pattern
 cook exec -n [pattern]           # show what would run (--dry-run)
 cook exec -k [pattern]           # keep going on failure (--keep-going)
 cook exec -j4 [pattern]          # run up to 4 tasks in parallel (--jobs)
+cook exec -s [pattern]           # stream task output to terminal (--stream)
 cook inspect [pattern]           # show dependency graph and staleness
+cook ls [pattern]                # list task names
+cook ls -s [pattern]             # list only stale tasks (--stale)
 cook invalidate <pattern>        # force tasks to re-run next time
 cook validate <pattern>          # mark tasks as up-to-date without running
 ```
 
-Patterns use glob syntax (`fnmatch`). Dependencies of matched tasks are always included.
+Patterns use glob syntax (`fnmatch`). Use `-r` for regex. Dependencies of matched tasks are always included.
+
+Global flags: `-v` (verbose), `-q` (quiet), `--color=auto|always|never`, `-f` (recipe file), `-c` (config file).
 
 ## Defining tasks
 
-Use `ctx.sh()` to create shell tasks:
+Use `sh()` to create shell tasks:
 
 ```python
-ctx = get_context()
+from cook import sh
 
-obj = ctx.sh(
+obj = sh(
     name="compile-foo",
     cmd="gcc -c foo.c -o foo.o",
     inputs=["foo.c"],
@@ -65,7 +68,7 @@ obj = ctx.sh(
 )
 
 # depend on another task by putting it in inputs
-ctx.sh(
+sh(
     name="link",
     cmd="gcc foo.o -o app",
     inputs=[obj, "foo.o"],
@@ -104,13 +107,28 @@ Optional `cook.toml` in your project root:
 ```toml
 [cook]
 recipe = "recipe.py"        # default recipe file
+executor = "local"          # or "slurm"
 default = "build-*"         # default pattern for bare `cook exec`
 
 [cook.local]
 max_concurrent = 8          # parallel task limit (default: 1)
+
+[cook.slurm]
+max_concurrent = 64
+poll_interval = 2.0
+
+[cook.slurm.defaults]      # default sbatch flags for all slurm tasks
+mem = "4G"
+partition = "batch"
 ```
 
 All settings have sensible defaults. CLI flags override config values.
+
+Per-task slurm options override defaults:
+
+```python
+sh(name="train", cmd="python train.py", slurm={"mem": "32G", "gres": "gpu:1"})
+```
 
 ## How staleness works
 
