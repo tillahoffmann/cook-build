@@ -190,3 +190,12 @@ def test_sh_extra_kwargs() -> None:
             slurm={"mem": "8G", "partition": "gpu"},
         )
     assert task.extra == {"slurm": {"mem": "8G", "partition": "gpu"}}
+
+
+def test_top_level_sh() -> None:
+    from cook import sh
+
+    with Context() as ctx:
+        task = sh(name="top-level", cmd="echo hello", outputs=["out.txt"])
+    assert "top-level" in ctx.tasks
+    assert task.cmd == "echo hello"
