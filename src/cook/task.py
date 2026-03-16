@@ -10,6 +10,8 @@ _GLOB_CHARS = set("*?[]")
 
 
 def _validate_name(name: str) -> None:
+    if not name or not name.strip():
+        raise ValueError("Task name must not be empty or whitespace-only.")
     if any(c in _GLOB_CHARS for c in name):
         raise ValueError(
             f"Task name {name!r} contains glob characters (*?[]). "

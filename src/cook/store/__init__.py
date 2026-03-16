@@ -20,8 +20,14 @@ class TaskRecord:
     def duration(self) -> float | None:
         if self.last_started is None:
             return None
-        end = self.last_succeeded or self.last_failed
-        if end is None:
+        # Use whichever of succeeded/failed is most recent
+        candidates = [
+            t for t in (self.last_succeeded, self.last_failed) if t is not None
+        ]
+        if not candidates:
+            return None
+        end = max(candidates)
+        if end < self.last_started:
             return None
         return (end - self.last_started).total_seconds()
 

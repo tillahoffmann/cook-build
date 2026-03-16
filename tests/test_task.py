@@ -12,6 +12,16 @@ def test_task_creation() -> None:
     assert t.outputs == ["a.o"]
 
 
+def test_empty_name_rejected() -> None:
+    with pytest.raises(ValueError, match="must not be empty"):
+        Task(name="")
+
+
+def test_whitespace_name_rejected() -> None:
+    with pytest.raises(ValueError, match="must not be empty"):
+        Task(name="   ")
+
+
 def test_task_defaults() -> None:
     t = Task(name="empty")
     assert t.inputs == []

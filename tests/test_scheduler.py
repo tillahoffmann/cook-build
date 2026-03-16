@@ -11,8 +11,10 @@ from cook.scheduler import (
     DependencyFailedError,
     Scheduler,
     TaskOutputError,
+    compute_effective_digest,
     is_stale,
 )
+from cook.store import TaskRecord
 from cook.store.sqlite import SqliteBuildStore
 from cook.task import ShellTask
 
@@ -802,3 +804,39 @@ def test_is_stale_missing_file_input(tmp_path: Path, store: SqliteBuildStore) ->
         outputs=[str(outfile)],
     )
     assert is_stale(task, store) is True
+
+
+def test_is_stale_memoizes_diamond(tmp_path: Path, store: SqliteBuildStore) -> None:
+    """is_stale memoizes results so diamond DAGs don't re-check shared deps."""
+    shared_out = tmp_path / "shared.txt"
+    shared_out.write_text("data")
+    shared = ShellTask(name="shared", cmd="true", outputs=[str(shared_out)])
+
+    left_out = tmp_path / "left.txt"
+    left_out.write_text("left")
+    left = ShellTask(name="left", cmd="true", inputs=[shared], outputs=[str(left_out)])
+
+    right_out = tmp_path / "right.txt"
+    right_out.write_text("right")
+    right = ShellTask(
+        name="right", cmd="true", inputs=[shared], outputs=[str(right_out)]
+    )
+
+    # Store records so everything is up-to-date
+    shared_digest = compute_effective_digest(shared, store)
+    assert shared_digest is not None
+    store.save(TaskRecord(task_id="shared", digest=shared_digest))
+
+    left_digest = compute_effective_digest(left, store)
+    assert left_digest is not None
+    store.save(TaskRecord(task_id="left", digest=left_digest))
+
+    right_digest = compute_effective_digest(right, store)
+    assert right_digest is not None
+    store.save(TaskRecord(task_id="right", digest=right_digest))
+
+    # Check both via shared memo dict — shared should be checked only once
+    memo: dict[str, bool] = {}
+    assert is_stale(left, store, _memo=memo) is False
+    assert "shared" in memo  # memoized
+    assert is_stale(right, store, _memo=memo) is False

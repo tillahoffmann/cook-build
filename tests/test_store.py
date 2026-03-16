@@ -153,6 +153,35 @@ def test_duration_derived_from_timestamps() -> None:
     assert failed_record.duration == 5.0
 
 
+def test_duration_uses_most_recent_end() -> None:
+    """When both last_succeeded and last_failed exist, use the most recent."""
+    start = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    old_success = datetime(2025, 1, 1, 12, 0, 3, tzinfo=timezone.utc)
+    new_failure = datetime(2025, 1, 1, 12, 0, 7, tzinfo=timezone.utc)
+    record = TaskRecord(
+        task_id="t",
+        digest="d",
+        last_started=start,
+        last_succeeded=old_success,
+        last_failed=new_failure,
+    )
+    # Should use the more recent failure, not the stale success
+    assert record.duration == 7.0
+
+
+def test_duration_none_when_end_before_start() -> None:
+    """Stale succeeded/failed from a previous run should return None."""
+    start = datetime(2025, 1, 1, 12, 0, 10, tzinfo=timezone.utc)
+    old_success = datetime(2025, 1, 1, 12, 0, 3, tzinfo=timezone.utc)
+    record = TaskRecord(
+        task_id="t",
+        digest="d",
+        last_started=start,
+        last_succeeded=old_success,
+    )
+    assert record.duration is None
+
+
 def test_duration_none_without_timestamps() -> None:
     assert TaskRecord(task_id="t", digest="d").duration is None
     assert (

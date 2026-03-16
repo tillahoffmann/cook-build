@@ -64,6 +64,11 @@ def match_targets(
 
 
 def collect_transitive(tasks: list[Task]) -> list[Task]:
+    """Collect all transitive dependencies in topological order (deps before dependents).
+
+    This ordering is relied upon by cmd_validate which needs dep records
+    stored before computing dependent digests.
+    """
     visited: set[str] = set()
     result: list[Task] = []
 

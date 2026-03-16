@@ -65,6 +65,23 @@ def resolve_file_deps(tasks: dict[str, Task]) -> dict[str, Task]:
     return tasks
 
 
+def check_extra_keys(tasks: dict[str, Task]) -> dict[str, Task]:
+    """Check that all top-level extra keys match registered executor names."""
+    from .executor import registered_executor_names
+
+    valid = registered_executor_names()
+    for task in tasks.values():
+        unknown = set(task.extra) - valid
+        if unknown:
+            raise ValueError(
+                f"Task {task.name!r}: unknown extra key(s): "
+                f"{', '.join(sorted(unknown))}. "
+                f"Valid keys are registered executor names: "
+                f"{', '.join(sorted(valid))}"
+            )
+    return tasks
+
+
 def check_cycles(tasks: dict[str, Task]) -> dict[str, Task]:
     WHITE, GRAY, BLACK = 0, 1, 2
     color: dict[str, int] = {name: WHITE for name in tasks}
@@ -92,6 +109,7 @@ def check_cycles(tasks: dict[str, Task]) -> dict[str, Task]:
 DEFAULT_TRANSFORMS: list[GraphTransform] = [
     check_deps_registered,
     check_outputs,
+    check_extra_keys,
     resolve_file_deps,
     check_cycles,
 ]

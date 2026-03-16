@@ -94,6 +94,7 @@ def is_stale(
     task: Task,
     store: BuildStore,
     file_cache: FileDigestCache | None = None,
+    _memo: dict[str, bool] | None = None,
 ) -> bool:
     """Return True if the task needs to run.
 
@@ -103,28 +104,43 @@ def is_stale(
     - no stored record exists
     - any output file is missing
     - the effective digest doesn't match the stored one
+
+    Results are memoized per task_id to avoid exponential re-checking
+    on diamond DAGs.
     """
+    if _memo is None:
+        _memo = {}
+    if task.task_id in _memo:
+        return _memo[task.task_id]
+
     if not task.outputs:
+        _memo[task.task_id] = True
         return True
 
     for dep in task.task_deps:
-        if is_stale(dep, store, file_cache):
+        if is_stale(dep, store, file_cache, _memo):
+            _memo[task.task_id] = True
             return True
 
     try:
         effective = compute_effective_digest(task, store, file_cache)
     except FileNotFoundError:
+        _memo[task.task_id] = True
         return True
-    if effective is None:
+    if effective is None:  # pragma: no cover
         # A dependency has no outputs or no stored record despite passing
         # recursive staleness checks — conservatively treat as stale.
-        return True  # pragma: no cover
+        _memo[task.task_id] = True
+        return True
 
     record = store.get(task.task_id)
     if record is None or record.digest != effective:
+        _memo[task.task_id] = True
         return True
 
-    return not all(Path(o).resolve().exists() for o in task.outputs)
+    result = not all(Path(o).resolve().exists() for o in task.outputs)
+    _memo[task.task_id] = result
+    return result
 
 
 class Scheduler:

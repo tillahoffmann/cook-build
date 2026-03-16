@@ -8,6 +8,7 @@ from cook.task import ShellTask, Task
 from cook.transform import (
     check_cycles,
     check_deps_registered,
+    check_extra_keys,
     check_outputs,
     resolve_file_deps,
 )
@@ -182,3 +183,22 @@ def test_resolve_creates_cycle() -> None:
     resolve_file_deps(_tasks(a, b))
     with pytest.raises(ValueError, match="cycle"):
         check_cycles(_tasks(a, b))
+
+
+# --- check_extra_keys ---
+
+
+def test_extra_keys_valid_executor_name() -> None:
+    a = ShellTask(name="a", cmd="echo", extra={"slurm": {"mem": "8G"}})
+    check_extra_keys(_tasks(a))  # should not raise
+
+
+def test_extra_keys_unknown_rejected() -> None:
+    a = ShellTask(name="a", cmd="echo", extra={"bogus": {"x": "y"}})
+    with pytest.raises(ValueError, match="unknown extra key.*bogus"):
+        check_extra_keys(_tasks(a))
+
+
+def test_extra_keys_empty_ok() -> None:
+    a = ShellTask(name="a", cmd="echo")
+    check_extra_keys(_tasks(a))  # should not raise

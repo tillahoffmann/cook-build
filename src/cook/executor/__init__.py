@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from abc import ABC
+from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Mapping
 from typing import Any, TypeVar, overload
 
@@ -35,10 +35,10 @@ class Executor(ABC):
         self._semaphore = asyncio.Semaphore(max_concurrent)
 
     @classmethod
+    @abstractmethod
     def from_config(
         cls, executor_config: dict[str, Any], jobs: int | None = None
-    ) -> Executor:
-        raise NotImplementedError
+    ) -> Executor: ...
 
     @overload
     @classmethod
@@ -113,6 +113,10 @@ def get_executor(name: str) -> type[Executor]:
         available = ", ".join(sorted(_executor_registry)) or "(none)"
         raise ValueError(f"Unknown executor {name!r}. Available: {available}")
     return _executor_registry[name][0]
+
+
+def registered_executor_names() -> set[str]:
+    return set(_executor_registry)
 
 
 from .local import LocalExecutor

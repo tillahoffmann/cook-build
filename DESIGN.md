@@ -53,12 +53,12 @@ The scheduler computes an **effective digest** for each task using SHA-256:
 ```
 effective_digest = hash(
     task.digest(),                                       # task's own identity
-    [hash_file(f) for f in sorted(task.file_inputs)],   # input file contents (sorted after path resolution)
+    [hash_file(f) for f in task.file_inputs],            # input file contents (order-dependent)
     [effective_digest(dep) for dep in sorted(task.task_deps)],  # dependency digests (sorted by name)
 )
 ```
 
-File inputs and task deps are sorted (by resolved path and task name respectively) before hashing, so reordering `inputs` does not change the effective digest.
+File inputs are **order-dependent** — reordering `inputs` changes the effective digest. This is intentional: it supports future `$^`-like semantics where the command implicitly depends on input order (e.g., `cat $^ > $@` produces different output depending on order). Task deps are sorted by name before hashing, so reordering task dependencies in `inputs` does *not* change the effective digest.
 
 **Timing:** the effective digest is computed **after all dependencies have completed**. This is critical because file inputs may include outputs of upstream tasks (e.g., `.o` files produced by a compile step). By hashing after deps finish, we capture the actual content of intermediate files.
 
@@ -180,12 +180,24 @@ Default implementation uses **SQLite** (`.cook.db` in WAL mode). Operations are 
 Built with `argparse`.
 
 ```
-cook exec [pattern]              Run tasks matching glob pattern (fnmatch)
-cook exec --dry-run [pattern]    Show what would run without executing
-cook exec -k [pattern]           Keep going on failure
-cook exec --executor=slurm ...   Override executor
-cook inspect [pattern]           Show dependency graph and staleness info
-cook invalidate <pattern>        Delete stored digests, forcing re-execution on next run
+cook [-c config] [-f recipe] <command> [options]
+
+cook exec [pattern] [-n] [-k] [-j N] [-x executor] [-r]
+    Run tasks matching glob pattern (fnmatch). -n/--dry-run shows what would
+    run. -k/--keep-going continues on failure. -j sets parallelism. -x overrides
+    executor. -r uses regex matching.
+
+cook inspect [pattern] [-r]
+    Show dependency graph, staleness, and execution history.
+
+cook ls [pattern] [-r] [-s | -c]
+    List task names. -s/--stale or -c/--current to filter by staleness.
+
+cook invalidate <pattern> [-r]
+    Delete stored digests, forcing re-execution on next run.
+
+cook validate <pattern> [-r]
+    Mark tasks as up-to-date without running them.
 ```
 
 **`cook invalidate`** does not cascade: invalidating a task forces it to re-run, but its dependents only re-run if the invalidated task's effective digest actually changes after re-execution.
@@ -205,7 +217,7 @@ The pattern selects **target tasks**; their transitive dependencies are always i
 
 ### Target Matching
 
-Task names are matched using `fnmatch` (stdlib glob). Future: `--regex` flag for regex patterns.
+Task names are matched using `fnmatch` (stdlib glob). The `-r`/`--re` flag switches to regex matching (via `re.search`). Multiple patterns are unioned with deduplication.
 
 ---
 
@@ -221,9 +233,21 @@ default = "build-*"             # default target pattern for bare `cook exec`
 
 [cook.local]
 max_concurrent = 8
+
+[cook.slurm]
+max_concurrent = 64
+poll_interval = 2.0
+poll_timeout = 86400.0
+poll_retries = 10
+
+[cook.slurm.defaults]           # default sbatch flags for all slurm tasks
+mem = "4G"
+partition = "batch"
 ```
 
-CLI flags override `cook.toml` values.
+Sub-tables under `[cook]` are treated as executor configuration. Each executor owns its config as a dataclass with `__post_init__` validation; the raw TOML dict is unpacked into it when the executor is constructed.
+
+CLI flags (`-c`/`--config`, `-f`/`--file`, `-x`/`--executor`, `-j`/`--jobs`) override `cook.toml` values.
 
 ---
 
@@ -295,15 +319,24 @@ src/cook/
     task.py              Task, ShellTask dataclasses
     context.py           Context, get_context()
     transform.py         Graph transform pipeline (validation + file dep resolution)
+    config.py            Config dataclass and cook.toml loading
     scheduler.py         Async DAG scheduler
     executor/
-        __init__.py      Executor ABC
-        local.py         LocalExecutor
+        __init__.py      Executor ABC, executor registry
+        local.py         LocalExecutor, LocalConfig
+        slurm.py         SlurmExecutor, SlurmConfig
     store/
-        __init__.py      BuildStore ABC, TaskRecord
+        __init__.py      BuildStore ABC, TaskRecord, FileDigestCache
         sqlite.py        SqliteBuildStore
-    config.py            cook.toml loading
-    cli.py               argparse CLI entry point
+    cli/
+        __init__.py      argparse CLI entry point, parser setup
+        __main__.py      python -m cook.cli entry point
+        cmd_exec.py      exec command
+        cmd_inspect.py   inspect command
+        cmd_invalidate.py invalidate command
+        cmd_ls.py        ls command
+        cmd_validate.py  validate command
+        util.py          Shared CLI helpers (match_targets, collect_transitive, etc.)
 ```
 
 ---
@@ -322,6 +355,9 @@ src/cook/
 | Context via contextvars | Thread-safe singleton with clean test isolation via context manager |
 | register() takes one task, returns it | Allows chaining: `task = ctx.register(MyTask(...))`. No ambiguous return types. |
 | Always-run effective digest is `None` | Propagates naturally: `None` in any dep → `None` for the dependent → must execute. No separate graph walk needed. |
+| Executor-specific task options namespaced in `extra` | `slurm={"mem": "8G"}` vs flat `mem="8G"`. Avoids ambiguity between executors and enables per-executor validation. |
+| Executor config decoupled from core Config | Each executor owns its config dataclass. Core Config only stores recipe/executor/default. Extensible without modifying cook internals. |
+| File inputs are order-dependent in digest | Supports future `$^`-like semantics where command behavior depends on input order |
 | cook.toml lookup is CWD only | Simple and explicit. No magic parent-directory walks. |
 | Paths resolve from CWD | Least surprising; matches how shell commands and tools work |
 | Synchronous BuildStore | SQLite ops are sub-millisecond; async wrapping adds complexity for no measurable benefit |
@@ -335,7 +371,7 @@ src/cook/
 - **Multi-repo** — cross-repo deps. Deferred; monorepo for now.
 - **Watch mode** — not needed currently.
 - **Artifact caching** — not planned; skip-or-rebuild is sufficient.
-- **`--regex` targeting** — add when needed.
 - **Verbose output** (`-v` / `-vv`) — add when needed.
 - **Per-task executor override** — deferred; priority semantics with CLI flag unclear.
 - **`.cook.db` schema versioning** — no migration strategy yet. Add when schema evolves.
+- **`$^`-like semantics** — input ordering support for commands that depend on input order.

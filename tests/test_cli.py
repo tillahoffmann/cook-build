@@ -354,6 +354,21 @@ def test_invalidate(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert "started" in captured
 
 
+def test_invalidate_no_store(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Invalidate without .cook.db should succeed with a message."""
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="t", cmd="true")
+        """,
+    )
+    rc = main(["invalidate", "t"])
+    assert rc == 0
+    assert "nothing to invalidate" in capsys.readouterr().out.lower()
+
+
 def test_keep_going(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     good_out = project / "good.txt"
     _write_recipe(
