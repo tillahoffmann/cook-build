@@ -10,19 +10,20 @@ Install cook by running `pip install cook-build` or your favorite Python package
 from pathlib import Path
 from cook import sh
 
-sources = sorted(Path("src").glob("*.c"))
-objects = []
-for src in sources:
-    objects.append(sh(
+sources = list(Path("src").glob("*.c"))
+objects = [src.with_suffix(".o") for src in sources]
+
+for src, obj in zip(sources, objects):
+    sh(
         name=f"compile-{src.stem}",
-        cmd=f"gcc -c {src} -o {src.with_suffix('.o')}",
-        inputs=[src], outputs=[src.with_suffix(".o")],
-    ))
+        cmd=f"gcc -c {src} -o {obj}",
+        inputs=[src], outputs=[obj],
+    )
 
 sh(
     name="link",
-    cmd=f"gcc {' '.join(str(o.outputs[0]) for o in objects)} -o build/app",
-    inputs=objects, outputs=[Path("build/app")]
+    cmd=f"gcc {' '.join(str(o) for o in objects)} -o build/app",
+    inputs=objects, outputs=["build/app"],
 )
 ```
 

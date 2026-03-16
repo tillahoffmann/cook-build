@@ -56,6 +56,15 @@ def test_output_task_fresh(capsys: pytest.CaptureFixture[str]):
     assert "my-task" in err
 
 
+def test_counter_alignment_double_digits(capsys: pytest.CaptureFixture[str]):
+    ui = Output(color=False)
+    ui.set_total(12)
+    ui.task_cooked("t1", 0.1)
+    err = capsys.readouterr().err
+    # Single-digit done should be right-aligned to match width of total
+    assert "[ 1/12]" in err
+
+
 def test_output_task_cooked(capsys: pytest.CaptureFixture[str]):
     ui = Output(color=False)
     ui.set_total(2)

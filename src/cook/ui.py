@@ -74,7 +74,8 @@ class Output:
 
     def _counter(self) -> str:
         self._done += 1
-        return f"[{self._done}/{self._total}]"
+        width = len(str(self._total))
+        return f"[{self._done:>{width}}/{self._total}]"
 
     def task_fresh(self, name: str) -> None:
         if self.verbosity < Verbosity.NORMAL:
