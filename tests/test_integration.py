@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-COOK_CMD = [sys.executable, "-m", "cook.cli"]
+COOK_CMD = [sys.executable, "-m", "cook"]
 
 
 def _run(

@@ -271,6 +271,10 @@ class Scheduler:
                     return
 
         # 5. Execute
+        from .task import ShellTask
+
+        if isinstance(task, ShellTask):
+            self._ui.verbose(f"  $ {task.cmd}")
         started_at = datetime.now(timezone.utc)
         try:
             await self._executor.execute(task)

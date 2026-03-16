@@ -1355,6 +1355,9 @@ def test_verbose_flag(project: Path, capsys: pytest.CaptureFixture[str]) -> None
     )
     rc = main(["-v", "exec", "t"])
     assert rc == 0
+    err = capsys.readouterr().err
+    # Verbose mode shows the command
+    assert f"$ echo ok > {outfile}" in err
 
 
 def test_quiet_flag(project: Path, capsys: pytest.CaptureFixture[str]) -> None:

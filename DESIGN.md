@@ -321,7 +321,8 @@ $ cook inspect "link"         # show dependency tree
 
 ```
 src/cook/
-    __init__.py          Public API: get_context, Task, ShellTask
+    __init__.py          Public API: get_context, sh, Task, ShellTask
+    __main__.py          python -m cook entry point
     task.py              Task, ShellTask dataclasses
     context.py           Context, get_context()
     transform.py         Graph transform pipeline (validation + file dep resolution)
@@ -336,7 +337,6 @@ src/cook/
         sqlite.py        SqliteBuildStore
     cli/
         __init__.py      argparse CLI entry point, parser setup
-        __main__.py      python -m cook.cli entry point
         cmd_exec.py      exec command
         cmd_inspect.py   inspect command
         cmd_invalidate.py invalidate command

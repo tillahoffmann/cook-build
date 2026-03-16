@@ -20,7 +20,7 @@ dev = [
 ]
 
 [tool.coverage.run]
-omit = ["src/cook/cli/__main__.py"]
+omit = ["src/cook/__main__.py"]
 
 [tool.coverage.report]
 exclude_also = [
