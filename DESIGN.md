@@ -182,7 +182,7 @@ Built with `argparse`.
 ```
 cook [-c config] [-f recipe] <command> [options]
 
-cook exec [pattern] [-n] [-k] [-j N] [-x executor] [-r]
+cook run [pattern] [-n] [-k] [-j N] [-x executor] [-r]
     Run tasks matching glob pattern (fnmatch). -n/--dry-run shows what would
     run. -k/--keep-going continues on failure. -j sets parallelism. -x overrides
     executor. -r uses regex matching.
@@ -190,7 +190,7 @@ cook exec [pattern] [-n] [-k] [-j N] [-x executor] [-r]
 cook inspect [pattern] [-r]
     Show dependency graph, staleness, and execution history.
 
-cook ls [pattern] [-r] [-s | -c]
+cook list [pattern] [-r] [-s | -c]
     List task names. -s/--stale or -c/--current to filter by staleness.
 
 cook invalidate <pattern> [-r]
@@ -206,7 +206,7 @@ cook build <output-pattern> [-n] [-k] [-j N] [-x executor] [-r] [-s]
 
 **`cook invalidate`** does not cascade: invalidating a task forces it to re-run, but its dependents only re-run if the invalidated task's effective digest actually changes after re-execution.
 
-If no pattern is given, `cook exec` uses the default target from `cook.toml` (the `default` key). If no default is configured and no pattern is given, cook errors.
+If no pattern is given, `cook run` uses the default target from `cook.toml` (the `default` key). If no default is configured and no pattern is given, cook errors.
 
 The pattern selects **target tasks**; their transitive dependencies are always included and executed as needed, regardless of whether they match the pattern.
 
@@ -233,7 +233,7 @@ Task names are matched using `fnmatch` (stdlib glob). The `-r`/`--re` flag switc
 [cook]
 recipe = "recipe.py"
 executor = "local"
-default = "build-*"             # default target pattern for bare `cook exec`
+default = "build-*"             # default target pattern for bare `cook run`
 
 [cook.local]
 max_concurrent = 8
@@ -261,7 +261,7 @@ Since tasks are pure data with explicit dependency references, the DAG is extrac
 
 **`cook inspect`** loads the recipe, walks the graph, computes effective digests, and displays a tree with staleness info.
 
-**`cook exec --dry-run`** does the same, formatted as "would execute" output.
+**`cook run --dry-run`** does the same, formatted as "would execute" output.
 
 ---
 
@@ -312,10 +312,10 @@ sh(name="test", cmd="pytest",
 ```
 
 ```
-$ cook exec "compile-*"      # compile all
-$ cook exec "link"            # link (auto-runs compile deps)
-$ cook exec "*"               # everything
-$ cook exec --dry-run "*"     # show what would run
+$ cook run "compile-*"      # compile all
+$ cook run "link"            # link (auto-runs compile deps)
+$ cook run "*"               # everything
+$ cook run --dry-run "*"     # show what would run
 $ cook inspect "link"         # show dependency tree
 ```
 

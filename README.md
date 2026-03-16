@@ -29,32 +29,38 @@ sh(
 Then run:
 
 ```bash
-cook exec "*"
+cook run "*"
 ```
 
-On the second run, unchanged tasks are skipped automatically.
+On the second run, unchanged tasks are skipped automatically:
+
+```
+[1/3] Fresh   compile-foo
+[2/3] Fresh   compile-bar
+[3/3] Fresh   link
+
+Build finished: 3 fresh in 0.0s
+```
 
 ## CLI
 
 ```bash
-cook exec [pattern]              # run tasks matching glob pattern
-cook exec -n [pattern]           # show what would run (--dry-run)
-cook exec -k [pattern]           # keep going on failure (--keep-going)
-cook exec -j4 [pattern]          # run up to 4 tasks in parallel (--jobs)
-cook exec -s [pattern]           # stream task output to terminal (--stream)
+cook run [pattern]               # run tasks matching glob patterncook run -n [pattern]            # show what would run (--dry-run)
+cook run -k [pattern]            # keep going on failure (--keep-going)
+cook run -j4 [pattern]           # run up to 4 tasks in parallel (--jobs)
+cook run -s [pattern]            # stream task output to terminal (--stream)
 cook build <output-pattern>      # run tasks that produce matching outputs
 cook inspect [pattern]           # show dependency graph and staleness
 cook inspect --json [pattern]    # JSON lines output
-cook ls [pattern]                # list task names
-cook ls -s [pattern]             # list only stale tasks (--stale)
-cook ls --json [pattern]         # JSON lines output
+cook list [pattern]              # list task namescook list -s [pattern]           # list only stale tasks (--stale)
+cook list --json [pattern]       # JSON lines output
 cook invalidate <pattern>        # force tasks to re-run next time
 cook validate <pattern>          # mark tasks as up-to-date without running
 ```
 
 Patterns use glob syntax (`fnmatch`). Use `-r` for regex. Dependencies of matched tasks are always included.
 
-Global flags: `-v` (verbose), `-q` (quiet), `--color=auto|always|never`, `-f` (recipe file), `-c` (config file).
+Global flags: `-v` (verbose), `-q` (quiet), `--color=auto|always|never`, `-f` (recipe file), `-c` (config file), `--version`.
 
 ## Defining tasks
 
@@ -82,6 +88,21 @@ sh(
 - **`inputs`** -- file paths and/or other tasks. Files are hashed for change detection; tasks become dependencies.
 - **`outputs`** -- files the task produces. Cook verifies they exist after execution.
 - Tasks with no outputs always run (useful for tests, linters, etc.).
+
+### Implicit dependencies
+
+If a task's file input matches another task's declared output, Cook automatically adds a dependency. This is equivalent to how Make resolves file-based dependencies:
+
+```python
+# No need to pass the compile task object — Cook resolves the dependency
+# automatically because link's input "foo.o" matches compile's output "foo.o".
+sh(name="compile", cmd="gcc -c foo.c -o foo.o", inputs=["foo.c"], outputs=["foo.o"])
+sh(name="link", cmd="gcc foo.o -o app", inputs=["foo.o"], outputs=["app"])
+```
+
+### Path resolution
+
+All relative paths in `inputs` and `outputs` are resolved relative to the recipe file's directory. This means recipes are portable — moving the project directory doesn't force a full rebuild.
 
 ## Custom task types
 
@@ -111,7 +132,7 @@ Optional `cook.toml` in your project root:
 [cook]
 recipe = "recipe.py"        # default recipe file
 executor = "local"          # or "slurm"
-default = "build-*"         # default pattern for bare `cook exec`
+default = "build-*"         # default pattern for bare `cook run`
 
 [cook.local]
 max_concurrent = 8          # parallel task limit (default: 1)
@@ -142,3 +163,5 @@ Cook computes a content hash for each task based on:
 3. The hashes of its dependencies
 
 If the hash matches the last successful run and all outputs exist, the task is skipped. Changed inputs, changed commands, or missing outputs all trigger re-execution.
+
+Tasks with no outputs (tests, linters) always run. If an always-run task is a dependency, all downstream tasks also re-run.

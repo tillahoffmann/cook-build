@@ -52,7 +52,7 @@ def match_targets(
     if not effective_patterns:
         raise ValueError(
             "No target pattern provided and no default configured in cook.toml. "
-            "Specify a pattern: cook exec '<pattern>'"
+            "Specify a pattern: cook run '<pattern>'"
         )
     seen: set[str] = set()
     matched: list[Task] = []

@@ -46,24 +46,24 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command")
 
-    exec_p = sub.add_parser("exec", help="Run tasks matching a pattern")
-    exec_p.add_argument("pattern", nargs="*")
-    exec_p.add_argument(
+    run_p = sub.add_parser("run", help="Run tasks matching a pattern")
+    run_p.add_argument("pattern", nargs="*")
+    run_p.add_argument(
         "-n", "--dry-run", action="store_true", help="Show what would run"
     )
-    exec_p.add_argument(
+    run_p.add_argument(
         "-k", "--keep-going", action="store_true", help="Continue on failure"
     )
-    exec_p.add_argument(
+    run_p.add_argument(
         "-j", "--jobs", type=int, default=None, help="Number of parallel jobs"
     )
-    exec_p.add_argument(
+    run_p.add_argument(
         "-x", "--executor", default=None, help="Override executor backend"
     )
-    exec_p.add_argument(
+    run_p.add_argument(
         "-r", "--re", action="store_true", dest="regex", help="Use regex matching"
     )
-    exec_p.add_argument(
+    run_p.add_argument(
         "-s",
         "--stream",
         action="store_true",
@@ -115,17 +115,17 @@ def _build_parser() -> argparse.ArgumentParser:
         "-r", "--re", action="store_true", dest="regex", help="Use regex matching"
     )
 
-    ls_p = sub.add_parser("ls", help="List task names")
-    ls_p.add_argument("pattern", nargs="*")
-    ls_p.add_argument(
+    list_p = sub.add_parser("list", help="List task names")
+    list_p.add_argument("pattern", nargs="*")
+    list_p.add_argument(
         "-r", "--re", action="store_true", dest="regex", help="Use regex matching"
     )
-    ls_p.add_argument("--json", action="store_true", help="Output as JSON lines")
-    ls_filter = ls_p.add_mutually_exclusive_group()
-    ls_filter.add_argument(
+    list_p.add_argument("--json", action="store_true", help="Output as JSON lines")
+    list_filter = list_p.add_mutually_exclusive_group()
+    list_filter.add_argument(
         "-s", "--stale", action="store_true", help="Only show stale tasks"
     )
-    ls_filter.add_argument(
+    list_filter.add_argument(
         "-c", "--current", action="store_true", help="Only show up-to-date tasks"
     )
 
@@ -164,11 +164,11 @@ def main(argv: list[str] | None = None) -> int:
 
     handlers: dict[str, HandlerFn] = {
         "build": cmd_build,
-        "exec": cmd_exec,
+        "run": cmd_exec,
         "inspect": cmd_inspect,
         "invalidate": cmd_invalidate,
         "validate": cmd_validate,
-        "ls": cmd_ls,
+        "list": cmd_ls,
     }
 
     try:
