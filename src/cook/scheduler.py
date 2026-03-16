@@ -164,6 +164,50 @@ def is_stale(
     return result
 
 
+def staleness_reason(
+    task: Task,
+    store: BuildStore,
+    file_cache: FileDigestCache | None = None,
+    project_root: Path | None = None,
+) -> str | None:
+    """Return a human-readable reason why a task is stale, or None if up-to-date."""
+    root = project_root or Path.cwd()
+
+    if not task.outputs:
+        return "always-run (no outputs)"
+
+    for dep in task.task_deps:
+        dep_reason = staleness_reason(dep, store, file_cache, root)
+        if dep_reason is not None:
+            return f"dependency {dep.name!r} is stale"
+
+    record = store.get(task.task_id)
+    if record is None:
+        return "never run"
+
+    try:
+        effective = compute_effective_digest(task, store, file_cache, root)
+    except FileNotFoundError as e:
+        return f"input missing: {e}"
+    if effective is None:
+        return "always-run dependency"  # pragma: no cover
+
+    if record.digest != effective:
+        return "digest changed"
+
+    def _resolve(p: str | Path) -> Path:
+        pp = Path(p)
+        if pp.is_absolute():
+            return pp.resolve()
+        return (root / pp).resolve()
+
+    missing = [str(o) for o in task.outputs if not _resolve(o).exists()]
+    if missing:
+        return f"output missing: {', '.join(missing)}"
+
+    return None
+
+
 class Scheduler:
     def __init__(
         self,

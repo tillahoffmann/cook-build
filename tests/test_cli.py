@@ -231,6 +231,196 @@ def test_inspect(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert "deps: step-a" in captured
 
 
+def test_inspect_shows_never_run(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="fresh-task", cmd="true", outputs=["out.txt"])
+        """,
+    )
+    rc = main(["inspect", "fresh-task"])
+    assert rc == 0
+    captured = capsys.readouterr().out
+    assert "never run" in captured
+
+
+def test_inspect_shows_why_always_run(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="check", cmd="true")
+        """,
+    )
+    rc = main(["inspect", "check"])
+    assert rc == 0
+    captured = capsys.readouterr().out
+    assert "always-run" in captured
+
+
+def test_inspect_shows_why_output_missing(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    outfile = project / "out.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="build", cmd="echo x > {outfile}", outputs=["{outfile}"])
+        """,
+    )
+    # Run first, then delete output
+    rc = main(["run", "build"])
+    assert rc == 0
+    outfile.unlink()
+    capsys.readouterr()
+
+    rc = main(["inspect", "build"])
+    assert rc == 0
+    captured = capsys.readouterr().out
+    assert "output missing" in captured
+
+
+def test_inspect_shows_why_always_run_with_store(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Always-run reason via staleness_reason (store exists)."""
+    outfile = project / "out.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="build", cmd="echo x > {outfile}", outputs=["{outfile}"])
+        ctx.sh(name="check", cmd="true")
+        """,
+    )
+    # Run build to create the store, then inspect check
+    rc = main(["run", "build"])
+    assert rc == 0
+    capsys.readouterr()
+
+    rc = main(["inspect", "check"])
+    assert rc == 0
+    captured = capsys.readouterr().out
+    assert "always-run" in captured
+
+
+def test_inspect_shows_never_run_with_store(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Never-run reason via staleness_reason (store exists but no record)."""
+    outfile = project / "out.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="built", cmd="echo x > {outfile}", outputs=["{outfile}"])
+        ctx.sh(name="new-task", cmd="true", outputs=["new.txt"])
+        """,
+    )
+    # Run only built to create the store
+    rc = main(["run", "built"])
+    assert rc == 0
+    capsys.readouterr()
+
+    rc = main(["inspect", "new-task"])
+    assert rc == 0
+    captured = capsys.readouterr().out
+    assert "never run" in captured
+
+
+def test_inspect_shows_why_dep_stale(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    out_a = project / "a.txt"
+    out_b = project / "b.txt"
+    infile = project / "src.txt"
+    infile.write_text("original")
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        a = ctx.sh(name="step-a", cmd="cat {infile} > {out_a}", inputs=["{infile}"], outputs=["{out_a}"])
+        ctx.sh(name="step-b", cmd="cat {out_a} > {out_b}", inputs=[a], outputs=["{out_b}"])
+        """,
+    )
+    rc = main(["run", "*"])
+    assert rc == 0
+    capsys.readouterr()
+
+    # Modify input to make step-a stale
+    infile.write_text("changed")
+    rc = main(["inspect", "step-b"])
+    assert rc == 0
+    captured = capsys.readouterr().out
+    assert "dependency" in captured
+    assert "step-a" in captured
+
+
+def test_inspect_shows_why_input_missing(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    infile = project / "src.txt"
+    infile.write_text("data")
+    outfile = project / "out.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="build", cmd="cat {infile} > {outfile}", inputs=["{infile}"], outputs=["{outfile}"])
+        """,
+    )
+    rc = main(["run", "build"])
+    assert rc == 0
+    capsys.readouterr()
+
+    # Delete the input file
+    infile.unlink()
+    rc = main(["inspect", "build"])
+    assert rc == 0
+    captured = capsys.readouterr().out
+    assert "input missing" in captured
+
+
+def test_inspect_shows_why_digest_changed(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    infile = project / "src.txt"
+    infile.write_text("original")
+    outfile = project / "out.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="build", cmd="cat {infile} > {outfile}", inputs=["{infile}"], outputs=["{outfile}"])
+        """,
+    )
+    # Run first
+    rc = main(["run", "build"])
+    assert rc == 0
+    capsys.readouterr()
+
+    # Modify input
+    infile.write_text("changed")
+    rc = main(["inspect", "build"])
+    assert rc == 0
+    captured = capsys.readouterr().out
+    assert "digest changed" in captured
+
+
 def test_inspect_with_store(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     outfile = project / "out.txt"
     _write_recipe(

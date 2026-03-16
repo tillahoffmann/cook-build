@@ -5,7 +5,7 @@ import json
 
 from ..config import Config
 from ..context import Context
-from ..scheduler import is_stale
+from ..scheduler import is_stale, staleness_reason
 from ..store import FileDigestCache, TaskRecord
 from ..store.sqlite import SqliteBuildStore
 from ..task import ShellTask, Task
@@ -15,11 +15,12 @@ from .util import match_targets, print_task_detail
 
 
 def _task_to_dict(
-    task: Task, stale: bool, record: TaskRecord | None
+    task: Task, stale: bool, record: TaskRecord | None, reason: str | None = None
 ) -> dict[str, object]:
     obj: dict[str, object] = {
         "name": task.name,
         "stale": stale,
+        "reason": reason,
         "deps": [d.name for d in task.task_deps],
         "inputs": [str(f) for f in task.file_inputs],
         "outputs": [str(o) for o in task.outputs],
@@ -56,16 +57,18 @@ def cmd_inspect(
         with SqliteBuildStore(str(db_path)) as store:
             for task in all_tasks:
                 stale = is_stale(task, store, cache, project_root=ctx.project_root)
+                reason = staleness_reason(task, store, cache, ctx.project_root)
                 record = store.get(task.task_id)
                 if use_json:
-                    print(json.dumps(_task_to_dict(task, stale, record)))
+                    print(json.dumps(_task_to_dict(task, stale, record, reason)))
                 else:
-                    print_task_detail(task, stale, record, ui)
+                    print_task_detail(task, stale, record, ui, reason)
     else:
         for task in all_tasks:
+            reason = "never run" if task.outputs else "always-run (no outputs)"
             if use_json:
-                print(json.dumps(_task_to_dict(task, True, None)))
+                print(json.dumps(_task_to_dict(task, True, None, reason)))
             else:
-                print_task_detail(task, True, None, ui)
+                print_task_detail(task, True, None, ui, reason)
 
     return 0

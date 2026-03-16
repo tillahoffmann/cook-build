@@ -180,11 +180,18 @@ def format_relative_time(dt: datetime) -> str:
 
 
 def print_task_detail(
-    task: Task, stale: bool, record: TaskRecord | None, ui: Output | None = None
+    task: Task,
+    stale: bool,
+    record: TaskRecord | None,
+    ui: Output | None = None,
+    reason: str | None = None,
 ) -> None:
     style = ui.style if ui is not None else Style(False)
     status = style.red("STALE") if stale else style.green("up-to-date")
     print(f"[{task.name}] {status}")
+
+    if reason:
+        print(f"    reason: {reason}")
 
     # Dependencies
     deps = task.task_deps
