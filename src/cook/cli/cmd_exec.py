@@ -10,22 +10,17 @@ from ..context import Context
 from ..scheduler import Scheduler, is_stale
 from ..store import FileDigestCache
 from ..store.sqlite import SqliteBuildStore
+from ..transform import collect_transitive
 from ..ui import Output
-from .util import collect_transitive, match_targets
+from .util import match_targets
 
 
 def cmd_exec(args: argparse.Namespace, config: Config, ctx: Context, ui: Output) -> int:
-
     executor_name = args.executor if args.executor is not None else config.executor
 
     from ..executor import get_executor
 
-    try:
-        executor_cls = get_executor(executor_name)
-    except ValueError as e:
-        ui.error(str(e))
-        return 1
-
+    executor_cls = get_executor(executor_name)
     targets = match_targets(ctx.tasks, args.pattern, config.default, args.regex)
 
     if args.dry_run:

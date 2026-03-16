@@ -8,8 +8,9 @@ from ..context import Context
 from ..scheduler import compute_effective_digest
 from ..store import TaskRecord
 from ..store.sqlite import SqliteBuildStore
+from ..transform import collect_transitive
 from ..ui import Output
-from .util import collect_transitive, match_targets
+from .util import match_targets
 
 
 def cmd_validate(

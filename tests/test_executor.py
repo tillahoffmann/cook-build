@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from pathlib import Path
 
 import pytest
 
@@ -23,7 +24,7 @@ async def test_local_executor_captures_stdout(tmp_path: object) -> None:
     executor = LocalExecutor()
     task = ShellTask(name="capture", cmd=f"echo hello > {outfile}")
     await executor.execute(task)
-    assert open(outfile).read().strip() == "hello"
+    assert Path(outfile).read_text().strip() == "hello"
 
 
 async def test_local_executor_raises_on_nonzero_exit() -> None:
@@ -129,7 +130,7 @@ async def test_env_dict_replaces_environment(tmp_path: object) -> None:
         env={"FOO": "bar", "PATH": "/usr/bin:/bin"},
     )
     await executor.execute(task)
-    content = open(outfile).read().strip()
+    content = Path(outfile).read_text().strip()
     assert content == "HOME="
 
 
@@ -138,10 +139,8 @@ async def test_cwd_sets_working_directory(tmp_path: object) -> None:
     executor = LocalExecutor()
     task = ShellTask(name="cwd-test", cmd=f"pwd > {outfile}", cwd=str(tmp_path))
     await executor.execute(task)
-    result = open(outfile).read().strip()
+    result = Path(outfile).read_text().strip()
     # Resolve symlinks for macOS /private/var/... vs /var/...
-    from pathlib import Path
-
     assert Path(result).resolve() == Path(str(tmp_path)).resolve()
 
 

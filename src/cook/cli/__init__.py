@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -139,7 +140,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         ui = _make_output(args)
     except ValueError as e:
-        print(f"Error: {e}", file=__import__("sys").stderr)
+        print(f"Error: {e}", file=sys.stderr)
         return 1
 
     try:

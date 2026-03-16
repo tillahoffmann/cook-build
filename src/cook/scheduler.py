@@ -179,7 +179,7 @@ class Scheduler:
         self._task_failures = 0
 
         # Count total tasks for progress counter
-        from .cli.util import collect_transitive
+        from .transform import collect_transitive
 
         all_tasks = collect_transitive(targets)
         self._ui.set_total(len(all_tasks))

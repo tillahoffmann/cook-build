@@ -8,8 +8,9 @@ from ..context import Context
 from ..scheduler import is_stale
 from ..store import FileDigestCache
 from ..store.sqlite import SqliteBuildStore
+from ..transform import collect_transitive
 from ..ui import Output
-from .util import collect_transitive, match_targets, print_task_detail
+from .util import match_targets, print_task_detail
 
 
 def cmd_inspect(

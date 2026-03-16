@@ -106,6 +106,28 @@ def check_cycles(tasks: dict[str, Task]) -> dict[str, Task]:
     return tasks
 
 
+def collect_transitive(tasks: list[Task]) -> list[Task]:
+    """Collect all transitive dependencies in topological order (deps before dependents).
+
+    This ordering is relied upon by cmd_validate which needs dep records
+    stored before computing dependent digests.
+    """
+    visited: set[str] = set()
+    result: list[Task] = []
+
+    def walk(task: Task) -> None:
+        if task.name in visited:
+            return
+        visited.add(task.name)
+        for dep in task.task_deps:
+            walk(dep)
+        result.append(task)
+
+    for t in tasks:
+        walk(t)
+    return result
+
+
 DEFAULT_TRANSFORMS: list[GraphTransform] = [
     check_deps_registered,
     check_outputs,

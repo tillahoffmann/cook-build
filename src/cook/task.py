@@ -81,3 +81,10 @@ class ShellTask(Task):
     cmd: str = ""
     env: dict[str, str] | None = None
     cwd: str | None = None
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if not self.cmd or not self.cmd.strip():
+            raise ValueError(
+                f"ShellTask {self.name!r}: cmd must not be empty or whitespace-only."
+            )

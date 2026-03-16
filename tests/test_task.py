@@ -136,15 +136,24 @@ def test_deps_default_empty() -> None:
 
 
 def test_shelltask_inherits_task() -> None:
-    t = ShellTask(name="sh")
+    t = ShellTask(name="sh", cmd="true")
     assert isinstance(t, Task)
 
 
 def test_shelltask_defaults() -> None:
-    t = ShellTask(name="sh")
-    assert t.cmd == ""
+    t = ShellTask(name="sh", cmd="true")
     assert t.env is None
     assert t.cwd is None
+
+
+def test_shelltask_empty_cmd_rejected() -> None:
+    with pytest.raises(ValueError, match="must not be empty"):
+        ShellTask(name="sh")
+
+
+def test_shelltask_whitespace_cmd_rejected() -> None:
+    with pytest.raises(ValueError, match="must not be empty"):
+        ShellTask(name="sh", cmd="   ")
 
 
 def test_shelltask_fields() -> None:
@@ -168,20 +177,20 @@ def test_shelltask_digest_changes_with_cmd() -> None:
 
 
 def test_shelltask_digest_changes_with_env() -> None:
-    t1 = ShellTask(name="a", env={"A": "1"})
-    t2 = ShellTask(name="a", env={"A": "2"})
+    t1 = ShellTask(name="a", cmd="true", env={"A": "1"})
+    t2 = ShellTask(name="a", cmd="true", env={"A": "2"})
     assert t1.digest() != t2.digest()
 
 
 def test_shelltask_digest_changes_with_cwd() -> None:
-    t1 = ShellTask(name="a", cwd="/a")
-    t2 = ShellTask(name="a", cwd="/b")
+    t1 = ShellTask(name="a", cmd="true", cwd="/a")
+    t2 = ShellTask(name="a", cmd="true", cwd="/b")
     assert t1.digest() != t2.digest()
 
 
 def test_shelltask_digest_sorts_env_keys() -> None:
-    t1 = ShellTask(name="a", env={"B": "2", "A": "1"})
-    t2 = ShellTask(name="a", env={"A": "1", "B": "2"})
+    t1 = ShellTask(name="a", cmd="true", env={"B": "2", "A": "1"})
+    t2 = ShellTask(name="a", cmd="true", env={"A": "1", "B": "2"})
     assert t1.digest() == t2.digest()
 
 
@@ -240,7 +249,7 @@ def test_shelltask_digest_includes_class_name() -> None:
     """Task and ShellTask with same name should have different digests
     because the class name is part of the hash."""
     t = Task(name="a")
-    st = ShellTask(name="a")
+    st = ShellTask(name="a", cmd="true")
     assert t.digest() != st.digest()
 
 

@@ -18,14 +18,20 @@ def load_recipe(recipe_path: str) -> None:
         raise FileNotFoundError(f"Recipe file not found: {recipe_path}")
 
     recipe_dir = str(path.parent)
+    added = False
     if not sys.path or sys.path[0] != recipe_dir:
         sys.path.insert(0, recipe_dir)
+        added = True
 
-    spec = importlib.util.spec_from_file_location("__cook_recipe__", str(path))
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Cannot load recipe from {recipe_path}")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
+    try:
+        spec = importlib.util.spec_from_file_location("__cook_recipe__", str(path))
+        if spec is None or spec.loader is None:
+            raise ImportError(f"Cannot load recipe from {recipe_path}")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+    finally:
+        if added and sys.path and sys.path[0] == recipe_dir:
+            sys.path.pop(0)
 
 
 def match_targets(
@@ -62,28 +68,6 @@ def match_targets(
             f"Pattern(s) {pat_str} matched no tasks. Available tasks: {available}"
         )
     return matched
-
-
-def collect_transitive(tasks: list[Task]) -> list[Task]:
-    """Collect all transitive dependencies in topological order (deps before dependents).
-
-    This ordering is relied upon by cmd_validate which needs dep records
-    stored before computing dependent digests.
-    """
-    visited: set[str] = set()
-    result: list[Task] = []
-
-    def walk(task: Task) -> None:
-        if task.name in visited:
-            return
-        visited.add(task.name)
-        for dep in task.task_deps:
-            walk(dep)
-        result.append(task)
-
-    for t in tasks:
-        walk(t)
-    return result
 
 
 def format_relative_time(dt: datetime) -> str:
