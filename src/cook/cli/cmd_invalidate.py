@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
 from ..config import Config
 from ..context import Context
@@ -15,7 +14,7 @@ def cmd_invalidate(
 ) -> int:
     targets = match_targets(ctx.tasks, args.pattern, config.default, args.regex)
 
-    db_path = Path(".cook.db")
+    db_path = ctx.db_path
     if not db_path.exists():
         ui.status("No build store found, nothing to invalidate.")
         return 0

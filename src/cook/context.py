@@ -19,10 +19,14 @@ class Context:
     def __init__(
         self,
         transforms: list[GraphTransform] | None = None,
+        project_root: Path | None = None,
     ) -> None:
         self._tasks: dict[str, Task] = {}
         self._token: Token[Context | None] | None = None
         self._transforms = transforms if transforms is not None else DEFAULT_TRANSFORMS
+        self.project_root: Path = (
+            project_root if project_root is not None else Path.cwd()
+        )
 
     def register(self, task: Task) -> Task:
         if task.name in self._tasks:
@@ -55,6 +59,17 @@ class Context:
         self.register(task)
         return task
 
+    def resolve(self, path: str | Path) -> Path:
+        """Resolve a path relative to the project root."""
+        p = Path(path)
+        if p.is_absolute():
+            return p.resolve()
+        return (self.project_root / p).resolve()
+
+    @property
+    def db_path(self) -> Path:
+        return self.project_root / ".cook.db"
+
     @property
     def tasks(self) -> dict[str, Task]:
         return dict(self._tasks)
@@ -71,7 +86,7 @@ class Context:
     def validate(self) -> None:
         tasks = self._tasks
         for transform in self._transforms:
-            tasks = transform(tasks)
+            tasks = transform(tasks, self.project_root)
         self._tasks = tasks
 
 

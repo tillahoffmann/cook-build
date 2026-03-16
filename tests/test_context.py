@@ -199,3 +199,33 @@ def test_top_level_sh() -> None:
         task = sh(name="top-level", cmd="echo hello", outputs=["out.txt"])
     assert "top-level" in ctx.tasks
     assert task.cmd == "echo hello"
+
+
+def test_project_root_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    with Context() as ctx:
+        assert ctx.project_root == tmp_path
+
+
+def test_project_root_explicit(tmp_path: Path) -> None:
+    root = tmp_path / "myproject"
+    root.mkdir()
+    with Context(project_root=root) as ctx:
+        assert ctx.project_root == root
+
+
+def test_resolve_relative(tmp_path: Path) -> None:
+    with Context(project_root=tmp_path) as ctx:
+        resolved = ctx.resolve("src/foo.c")
+    assert resolved == (tmp_path / "src" / "foo.c").resolve()
+
+
+def test_resolve_absolute(tmp_path: Path) -> None:
+    with Context(project_root=tmp_path) as ctx:
+        resolved = ctx.resolve("/usr/include/stdio.h")
+    assert resolved == Path("/usr/include/stdio.h").resolve()
+
+
+def test_db_path(tmp_path: Path) -> None:
+    with Context(project_root=tmp_path) as ctx:
+        assert ctx.db_path == tmp_path / ".cook.db"

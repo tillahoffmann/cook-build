@@ -10,4 +10,4 @@ from .util import match_targets, run_targets
 
 def cmd_exec(args: argparse.Namespace, config: Config, ctx: Context, ui: Output) -> int:
     targets = match_targets(ctx.tasks, args.pattern, config.default, args.regex)
-    return run_targets(targets, args, config, ui)
+    return run_targets(targets, args, config, ctx, ui)

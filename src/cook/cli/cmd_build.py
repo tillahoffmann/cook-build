@@ -12,4 +12,4 @@ def cmd_build(
     args: argparse.Namespace, config: Config, ctx: Context, ui: Output
 ) -> int:
     targets = match_outputs(ctx.tasks, args.pattern, args.regex)
-    return run_targets(targets, args, config, ui)
+    return run_targets(targets, args, config, ctx, ui)

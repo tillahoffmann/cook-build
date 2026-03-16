@@ -10,7 +10,7 @@ from pathlib import Path
 @dataclass
 class TaskRecord:
     task_id: str
-    digest: str
+    digest: str | None
     last_started: datetime | None = None
     last_succeeded: datetime | None = None
     last_failed: datetime | None = None

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Callable
+from importlib.metadata import version
 from pathlib import Path
 
 from ..config import Config, ConfigError, load_config
@@ -19,12 +20,14 @@ from .cmd_ls import cmd_ls
 from .cmd_validate import cmd_validate
 from .util import load_recipe
 
-_VERSION = "0.1.0"
-
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cook", description="Cook build system")
-    parser.add_argument("--version", action="version", version=f"cook {_VERSION}")
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"cook {version('cook-build')}",
+    )
     parser.add_argument(
         "-c", "--config", default=None, help="Config file (default: cook.toml)"
     )
@@ -182,7 +185,10 @@ def main(argv: list[str] | None = None) -> int:
         ui.error(str(e))
         return 1
 
-    with Context() as ctx:
+    recipe_path = Path(config.recipe).resolve()
+    project_root = recipe_path.parent
+
+    with Context(project_root=project_root) as ctx:
         try:
             load_recipe(config.recipe)
         except Exception as e:

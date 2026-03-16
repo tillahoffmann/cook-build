@@ -19,7 +19,7 @@ class SqliteBuildStore(BuildStore):
             """
             CREATE TABLE IF NOT EXISTS tasks (
                 task_id TEXT PRIMARY KEY,
-                digest TEXT NOT NULL,
+                digest TEXT,
                 last_started TEXT,
                 last_succeeded TEXT,
                 last_failed TEXT,

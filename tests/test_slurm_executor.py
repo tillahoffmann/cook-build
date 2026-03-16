@@ -596,7 +596,7 @@ async def test_cancel_job_timeout() -> None:
 
     with patch("cook.executor.slurm._run_cmd", side_effect=hanging_scancel):
         # Should complete quickly despite scancel hanging, not raise
-        await _cancel_job("123")
+        await _cancel_job("123", timeout=0.1)
 
 
 def test_parse_scontrol_values_with_spaces() -> None:
@@ -637,7 +637,6 @@ def test_parse_scontrol_multiline() -> None:
     assert info["StdErr"] == "/tmp/slurm-42.out"
 
 
-@pytest.mark.asyncio
 async def test_submit_job_extra_sbatch_flags() -> None:
     """Extra keys on the task are passed as sbatch flags."""
     task = ShellTask(
@@ -665,7 +664,6 @@ async def test_submit_job_extra_sbatch_flags() -> None:
     assert captured_cmd[captured_cmd.index("--partition") + 1] == "gpu"
 
 
-@pytest.mark.asyncio
 async def test_submit_job_no_extra() -> None:
     """Without extra, no resource flags are added."""
     task = ShellTask(name="plain", cmd="echo hi")
@@ -685,7 +683,6 @@ async def test_submit_job_no_extra() -> None:
         assert flag not in captured_cmd
 
 
-@pytest.mark.asyncio
 async def test_submit_job_defaults_merged() -> None:
     """Config defaults are merged, with task extra taking precedence."""
     task = ShellTask(

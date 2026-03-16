@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
 from ..config import Config
 from ..context import Context
@@ -26,9 +25,7 @@ def cmd_validate(
         if not task.outputs:
             ui.status(f"[{task.name}] skipped (no outputs or always-run dependency)")
             continue
-        missing = [
-            Path(o).resolve() for o in task.outputs if not Path(o).resolve().exists()
-        ]
+        missing = [ctx.resolve(o) for o in task.outputs if not ctx.resolve(o).exists()]
         if missing:
             paths = ", ".join(str(p) for p in missing)
             ui.status(f"[{task.name}] skipped (missing outputs: {paths})")
@@ -38,9 +35,11 @@ def cmd_validate(
     if not validatable:
         return 0
 
-    with SqliteBuildStore(".cook.db") as store:
+    with SqliteBuildStore(str(ctx.db_path)) as store:
         for task in validatable:
-            effective = compute_effective_digest(task, store)
+            effective = compute_effective_digest(
+                task, store, project_root=ctx.project_root
+            )
             if effective is None:
                 ui.status(f"[{task.name}] skipped (always-run dependency)")
                 continue

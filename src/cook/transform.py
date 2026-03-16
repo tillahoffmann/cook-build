@@ -8,10 +8,21 @@ from .task import Task
 
 
 class GraphTransform(Protocol):
-    def __call__(self, tasks: dict[str, Task]) -> dict[str, Task]: ...
+    def __call__(
+        self, tasks: dict[str, Task], project_root: Path | None = None
+    ) -> dict[str, Task]: ...
 
 
-def check_deps_registered(tasks: dict[str, Task]) -> dict[str, Task]:
+def _resolve(path: str | Path, root: Path) -> Path:
+    p = Path(path)
+    if p.is_absolute():
+        return p.resolve()
+    return (root / p).resolve()
+
+
+def check_deps_registered(
+    tasks: dict[str, Task], project_root: Path | None = None
+) -> dict[str, Task]:
     for task in tasks.values():
         for dep in task.task_deps:
             if dep.name not in tasks:
@@ -22,11 +33,14 @@ def check_deps_registered(tasks: dict[str, Task]) -> dict[str, Task]:
     return tasks
 
 
-def check_outputs(tasks: dict[str, Task]) -> dict[str, Task]:
+def check_outputs(
+    tasks: dict[str, Task], project_root: Path | None = None
+) -> dict[str, Task]:
+    root = project_root or Path.cwd()
     seen_outputs: dict[Path, str] = {}
     for task in tasks.values():
         for out in task.outputs:
-            resolved = Path(out).resolve()
+            resolved = _resolve(out, root)
             if resolved in seen_outputs:
                 raise ValueError(
                     f"Duplicate output path {str(out)!r}: "
@@ -36,9 +50,9 @@ def check_outputs(tasks: dict[str, Task]) -> dict[str, Task]:
             seen_outputs[resolved] = task.name
 
     for task in tasks.values():
-        resolved_outputs = {Path(o).resolve() for o in task.outputs}
+        resolved_outputs = {_resolve(o, root) for o in task.outputs}
         for inp in task.file_inputs:
-            resolved_inp = Path(inp).resolve()
+            resolved_inp = _resolve(inp, root)
             if resolved_inp in resolved_outputs:
                 raise ValueError(
                     f"Task {task.name!r} has {str(inp)!r} as both "
@@ -47,17 +61,20 @@ def check_outputs(tasks: dict[str, Task]) -> dict[str, Task]:
     return tasks
 
 
-def resolve_file_deps(tasks: dict[str, Task]) -> dict[str, Task]:
+def resolve_file_deps(
+    tasks: dict[str, Task], project_root: Path | None = None
+) -> dict[str, Task]:
     """Add implicit task dependencies based on file input/output matching."""
+    root = project_root or Path.cwd()
     output_index: dict[Path, Task] = {}
     for task in tasks.values():
         for out in task.outputs:
-            output_index[Path(out).resolve()] = task
+            output_index[_resolve(out, root)] = task
 
     for task in tasks.values():
         explicit = set(task.task_deps)
         for inp in task.file_inputs:
-            resolved = Path(inp).resolve()
+            resolved = _resolve(inp, root)
             producer = output_index.get(resolved)
             if producer is not None and producer not in explicit:
                 task._deps.add(producer)
@@ -66,7 +83,9 @@ def resolve_file_deps(tasks: dict[str, Task]) -> dict[str, Task]:
     return tasks
 
 
-def check_extra_keys(tasks: dict[str, Task]) -> dict[str, Task]:
+def check_extra_keys(
+    tasks: dict[str, Task], project_root: Path | None = None
+) -> dict[str, Task]:
     """Check that all top-level extra keys match registered executor names."""
     valid = registered_executor_names()
     for task in tasks.values():
@@ -81,7 +100,9 @@ def check_extra_keys(tasks: dict[str, Task]) -> dict[str, Task]:
     return tasks
 
 
-def check_cycles(tasks: dict[str, Task]) -> dict[str, Task]:
+def check_cycles(
+    tasks: dict[str, Task], project_root: Path | None = None
+) -> dict[str, Task]:
     WHITE, GRAY, BLACK = 0, 1, 2
     color: dict[str, int] = {name: WHITE for name in tasks}
 

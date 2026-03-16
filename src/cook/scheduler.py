@@ -35,7 +35,11 @@ class DependencyFailedError(Exception):
 class BuildError(Exception):
     def __init__(self, failures: list[Exception]) -> None:
         self.failures = failures
-        names = ", ".join(_task_name_from_error(e) for e in failures)
+        # Filter out DependencyFailedError — those are consequences, not root causes
+        root_causes = [e for e in failures if not isinstance(e, DependencyFailedError)]
+        names = ", ".join(_task_name_from_error(e) for e in root_causes) or ", ".join(
+            _task_name_from_error(e) for e in failures
+        )
         super().__init__(f"Build failed. Task errors: {names}")
 
 
@@ -49,6 +53,7 @@ def compute_effective_digest(
     task: Task,
     store: BuildStore,
     file_cache: FileDigestCache | None = None,
+    project_root: Path | None = None,
 ) -> str | None:
     """Compute the effective digest for a task given a store.
 
@@ -58,12 +63,14 @@ def compute_effective_digest(
     if not task.outputs:
         return None
 
+    root = (project_root or Path.cwd()).resolve()
+
     dep_digests: list[tuple[str, str]] = []
     for dep in sorted(task.task_deps, key=lambda d: d.name):
         if not dep.outputs:
             return None
         dep_record = store.get(dep.task_id)
-        if dep_record is None:
+        if dep_record is None or dep_record.digest is None:
             return None
         dep_digests.append((dep.name, dep_record.digest))
 
@@ -71,7 +78,9 @@ def compute_effective_digest(
     h.update(task.digest().encode())
 
     for fi in task.file_inputs:
-        resolved = Path(fi).resolve()
+        resolved = (
+            (root / fi).resolve() if not Path(fi).is_absolute() else Path(fi).resolve()
+        )
         try:
             content_hash = (
                 file_cache.hash_file(resolved)
@@ -82,7 +91,12 @@ def compute_effective_digest(
             raise FileNotFoundError(
                 f"Input file '{resolved}' not found for task '{task.name}'"
             )
-        h.update(str(resolved).encode())
+        # Use relative path for files inside project, absolute for external
+        try:
+            path_for_hash = str(resolved.relative_to(root))
+        except ValueError:
+            path_for_hash = str(resolved)
+        h.update(path_for_hash.encode())
         h.update(content_hash)
 
     for _, digest in dep_digests:
@@ -96,6 +110,7 @@ def is_stale(
     store: BuildStore,
     file_cache: FileDigestCache | None = None,
     _memo: dict[str, bool] | None = None,
+    project_root: Path | None = None,
 ) -> bool:
     """Return True if the task needs to run.
 
@@ -109,6 +124,7 @@ def is_stale(
     Results are memoized per task_id to avoid exponential re-checking
     on diamond DAGs.
     """
+    root = project_root or Path.cwd()
     if _memo is None:
         _memo = {}
     if task.task_id in _memo:
@@ -119,12 +135,12 @@ def is_stale(
         return True
 
     for dep in task.task_deps:
-        if is_stale(dep, store, file_cache, _memo):
+        if is_stale(dep, store, file_cache, _memo, root):
             _memo[task.task_id] = True
             return True
 
     try:
-        effective = compute_effective_digest(task, store, file_cache)
+        effective = compute_effective_digest(task, store, file_cache, root)
     except FileNotFoundError:
         _memo[task.task_id] = True
         return True
@@ -139,7 +155,11 @@ def is_stale(
         _memo[task.task_id] = True
         return True
 
-    result = not all(Path(o).resolve().exists() for o in task.outputs)
+    def _resolve(p: str | Path) -> Path:
+        pp = Path(p)
+        return (root / pp).resolve() if not pp.is_absolute() else pp.resolve()
+
+    result = not all(_resolve(o).exists() for o in task.outputs)
     _memo[task.task_id] = result
     return result
 
@@ -152,12 +172,14 @@ class Scheduler:
         keep_going: bool = False,
         ui: Output | None = None,
         stream: bool = False,
+        project_root: Path | None = None,
     ) -> None:
         self._store = store
         self._executor = executor
         self._executor.stream = stream
         self._keep_going = keep_going
         self._ui = ui or Output(verbosity=Verbosity.NORMAL)
+        self._project_root = (project_root or Path.cwd()).resolve()
         self._futures: dict[str, asyncio.Future[None]] = {}
         self._failed: set[str] = set()
         self._errors: list[Exception] = []
@@ -262,7 +284,7 @@ class Scheduler:
         if effective is not None:
             record = self._store.get(task.task_id)
             if record is not None and record.digest == effective:
-                if all(Path(o).resolve().exists() for o in task.outputs):
+                if all(self._resolve(o).exists() for o in task.outputs):
                     self._fresh += 1
                     self._ui.task_fresh(task.name)
                     return
@@ -283,7 +305,7 @@ class Scheduler:
             self._store.save(
                 TaskRecord(
                     task_id=task.task_id,
-                    digest=effective or "",
+                    digest=effective,
                     last_started=started_at,
                     last_failed=failed_at,
                     error=str(exc),
@@ -297,9 +319,7 @@ class Scheduler:
         # 6. Verify outputs exist
         if task.outputs:
             missing = [
-                Path(o).resolve()
-                for o in task.outputs
-                if not Path(o).resolve().exists()
+                self._resolve(o) for o in task.outputs if not self._resolve(o).exists()
             ]
             if missing:
                 err = TaskOutputError(task, missing)
@@ -309,7 +329,7 @@ class Scheduler:
                 self._store.save(
                     TaskRecord(
                         task_id=task.task_id,
-                        digest=effective or "",
+                        digest=effective,
                         last_started=started_at,
                         last_failed=finished_at,
                         error=str(err),
@@ -331,5 +351,13 @@ class Scheduler:
                 )
             )
 
+    def _resolve(self, path: str | Path) -> Path:
+        p = Path(path)
+        if p.is_absolute():
+            return p.resolve()
+        return (self._project_root / p).resolve()
+
     def _compute_effective_digest(self, task: Task) -> str | None:
-        return compute_effective_digest(task, self._store, self._file_cache)
+        return compute_effective_digest(
+            task, self._store, self._file_cache, self._project_root
+        )

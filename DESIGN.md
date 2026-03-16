@@ -377,11 +377,9 @@ src/cook/
 
 ## Open Questions / Future Work
 
-- **`cook build <file>`** — address tasks by output path. Deferred.
 - **Multi-repo** — cross-repo deps. Deferred; monorepo for now.
 - **Watch mode** — not needed currently.
 - **Artifact caching** — not planned; skip-or-rebuild is sufficient.
-- **Verbose output** (`-v` / `-vv`) — add when needed.
 - **Per-task executor override** — deferred; priority semantics with CLI flag unclear.
 - **`.cook.db` schema versioning** — no migration strategy yet. Add when schema evolves.
 - **`$^`-like semantics** — input ordering support for commands that depend on input order.

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 
 from ..config import Config
 from ..context import Context
@@ -32,12 +31,12 @@ def cmd_ls(args: argparse.Namespace, config: Config, ctx: Context, ui: Output) -
     use_json = args.json
 
     if args.stale or args.current:
-        db_path = Path(".cook.db")
+        db_path = ctx.db_path
         if db_path.exists():
             cache = FileDigestCache()
             with SqliteBuildStore(str(db_path)) as store:
                 for task in tasks:
-                    stale = is_stale(task, store, cache)
+                    stale = is_stale(task, store, cache, project_root=ctx.project_root)
                     if (args.stale and stale) or (args.current and not stale):
                         _print_task(task.name, use_json, stale)
         else:

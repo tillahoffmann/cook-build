@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..config import Config
+from ..context import Context
 from ..executor import get_executor
 from ..scheduler import Scheduler, is_stale
 from ..store import FileDigestCache, TaskRecord
@@ -123,6 +124,7 @@ def run_targets(
     targets: list[Task],
     args: argparse.Namespace,
     config: Config,
+    ctx: Context,
     ui: Output,
 ) -> int:
     """Shared execution logic for exec and build commands."""
@@ -131,12 +133,12 @@ def run_targets(
 
     if args.dry_run:
         all_tasks = collect_transitive(targets)
-        db_path = Path(".cook.db")
+        db_path = ctx.db_path
         if db_path.exists():
             cache = FileDigestCache()
             with SqliteBuildStore(str(db_path)) as store:
                 for task in all_tasks:
-                    stale = is_stale(task, store, cache)
+                    stale = is_stale(task, store, cache, project_root=ctx.project_root)
                     status = "STALE (would run)" if stale else "up-to-date"
                     print(f"[{task.name}] {status}", file=sys.stderr)
         else:
@@ -147,9 +149,14 @@ def run_targets(
     stream = getattr(args, "stream", False)
     executor_config = config.executor_configs.get(executor_name, {})
     executor = executor_cls.from_config(executor_config, args.jobs)
-    with SqliteBuildStore(".cook.db") as store:
+    with SqliteBuildStore(str(ctx.db_path)) as store:
         scheduler = Scheduler(
-            store, executor, keep_going=args.keep_going, ui=ui, stream=stream
+            store,
+            executor,
+            keep_going=args.keep_going,
+            ui=ui,
+            stream=stream,
+            project_root=ctx.project_root,
         )
         asyncio.run(scheduler.run(targets))
 

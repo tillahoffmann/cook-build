@@ -821,3 +821,32 @@ def test_is_stale_memoizes_diamond(tmp_path: Path, store: SqliteBuildStore) -> N
     assert is_stale(left, store, _memo=memo) is False
     assert "shared" in memo  # memoized
     assert is_stale(right, store, _memo=memo) is False
+
+
+async def test_scheduler_resolves_absolute_output(
+    tmp_path: Path, store: SqliteBuildStore, executor: LocalExecutor
+) -> None:
+    """Absolute output paths should be resolved correctly."""
+    outfile = tmp_path / "abs_out.txt"
+    task = ShellTask(
+        name="abs",
+        cmd=f"echo ok > {outfile}",
+        outputs=[str(outfile)],
+    )
+    sched = Scheduler(store, executor, project_root=tmp_path)
+    await sched.run([task])
+    assert outfile.exists()
+
+
+async def test_scheduler_resolves_relative_output(
+    tmp_path: Path, store: SqliteBuildStore, executor: LocalExecutor
+) -> None:
+    """Relative output paths should resolve relative to project_root."""
+    task = ShellTask(
+        name="rel",
+        cmd=f"echo ok > {tmp_path / 'rel_out.txt'}",
+        outputs=["rel_out.txt"],
+    )
+    sched = Scheduler(store, executor, project_root=tmp_path)
+    await sched.run([task])
+    assert (tmp_path / "rel_out.txt").exists()
