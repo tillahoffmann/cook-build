@@ -19,9 +19,12 @@ from .cmd_ls import cmd_ls
 from .cmd_validate import cmd_validate
 from .util import load_recipe
 
+_VERSION = "0.1.0"
+
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cook", description="Cook build system")
+    parser.add_argument("--version", action="version", version=f"cook {_VERSION}")
     parser.add_argument(
         "-c", "--config", default=None, help="Config file (default: cook.toml)"
     )
@@ -191,12 +194,8 @@ def main(argv: list[str] | None = None) -> int:
             executor_name = config.executor
             if hasattr(args, "executor") and args.executor is not None:
                 executor_name = args.executor
-            try:
-                executor_cls = get_executor(executor_name)
-            except ValueError:
-                executor_cls = None
-            if executor_cls is not None:
-                executor_cls.validate_tasks(ctx.tasks)
+            executor_cls = get_executor(executor_name)
+            executor_cls.validate_tasks(ctx.tasks)
             return handlers[args.command](args, config, ctx, ui)
         except (
             ValueError,

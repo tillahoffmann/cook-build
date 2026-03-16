@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import fnmatch
 import importlib.util
 import re
@@ -9,8 +10,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..config import Config
-from ..store import TaskRecord
-from ..task import Task
+from ..executor import get_executor
+from ..scheduler import Scheduler, is_stale
+from ..store import FileDigestCache, TaskRecord
+from ..store.sqlite import SqliteBuildStore
+from ..task import ShellTask, Task
+from ..transform import collect_transitive
 from ..ui import Output, Style
 
 
@@ -121,15 +126,6 @@ def run_targets(
     ui: Output,
 ) -> int:
     """Shared execution logic for exec and build commands."""
-    import asyncio
-    import sys
-
-    from ..executor import get_executor
-    from ..scheduler import Scheduler, is_stale
-    from ..store import FileDigestCache
-    from ..store.sqlite import SqliteBuildStore
-    from ..transform import collect_transitive
-
     executor_name = args.executor if args.executor is not None else config.executor
     executor_cls = get_executor(executor_name)
 
@@ -179,8 +175,6 @@ def format_relative_time(dt: datetime) -> str:
 def print_task_detail(
     task: Task, stale: bool, record: TaskRecord | None, ui: Output | None = None
 ) -> None:
-    from ..task import ShellTask
-
     style = ui.style if ui is not None else Style(False)
     status = style.red("STALE") if stale else style.green("up-to-date")
     print(f"[{task.name}] {status}")

@@ -77,13 +77,13 @@ def test_output_task_failed(capsys: pytest.CaptureFixture[str]):
     assert "exit code 1" in err
 
 
-def test_output_task_failed_with_output(capsys: pytest.CaptureFixture[str]):
+def test_output_task_failed_multiline(capsys: pytest.CaptureFixture[str]):
     ui = Output(color=False)
     ui.set_total(1)
-    ui.task_failed("broken", 0.3, "error msg", output="extra output")
+    ui.task_failed("broken", 0.3, "line one\nline two")
     err = capsys.readouterr().err
-    assert "error msg" in err
-    assert "extra output" in err
+    assert "line one" in err
+    assert "line two" in err
 
 
 def test_output_task_skipped(capsys: pytest.CaptureFixture[str]):

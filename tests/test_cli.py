@@ -1008,6 +1008,28 @@ def test_validate_skips_missing_outputs(
     assert "missing outputs" in captured
 
 
+def test_validate_skips_always_run_dependency(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Tasks depending on always-run tasks cannot be validated."""
+    outfile = project / "out.txt"
+    outfile.write_text("done")
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        check = ctx.sh(name="check", cmd="true")
+        ctx.sh(name="build", cmd="true", inputs=[check], outputs=["{outfile}"])
+        """,
+    )
+    rc = main(["validate", "build"])
+    assert rc == 0
+    captured = capsys.readouterr().err
+    assert "[build] skipped" in captured
+    assert "always-run" in captured
+
+
 def test_validate_with_deps(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     """Validate processes deps first so dependent digests are correct."""
     dep_out = project / "dep.txt"

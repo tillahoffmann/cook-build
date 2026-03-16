@@ -6,9 +6,10 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .executor import Executor
+from .executor import Executor, TaskExecutionError
 from .store import BuildStore, FileDigestCache, TaskRecord
-from .task import Task
+from .task import ShellTask, Task
+from .transform import collect_transitive
 from .ui import Output, Verbosity
 
 
@@ -39,8 +40,6 @@ class BuildError(Exception):
 
 
 def _task_name_from_error(e: Exception) -> str:
-    from .executor import TaskExecutionError
-
     if isinstance(e, (TaskOutputError, DependencyFailedError, TaskExecutionError)):
         return e.task.name
     return str(e)
@@ -179,8 +178,6 @@ class Scheduler:
         self._task_failures = 0
 
         # Count total tasks for progress counter
-        from .transform import collect_transitive
-
         all_tasks = collect_transitive(targets)
         self._ui.set_total(len(all_tasks))
 
@@ -271,8 +268,6 @@ class Scheduler:
                     return
 
         # 5. Execute
-        from .task import ShellTask
-
         if isinstance(task, ShellTask):
             self._ui.verbose(f"  $ {task.cmd}")
         started_at = datetime.now(timezone.utc)
@@ -283,16 +278,7 @@ class Scheduler:
             elapsed = (failed_at - started_at).total_seconds()
             self._task_failures += 1
 
-            # Build error output from the exception
-            from .executor import TaskExecutionError
-
-            output = ""
-            if isinstance(exc, TaskExecutionError):
-                output = exc.stderr or exc.stdout
-            else:
-                output = str(exc)
-
-            self._ui.task_failed(task.name, elapsed, output)
+            self._ui.task_failed(task.name, elapsed, str(exc))
             self._failed.add(task.task_id)
             self._store.save(
                 TaskRecord(

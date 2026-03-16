@@ -253,19 +253,6 @@ async def test_deduplication_diamond(
     )
     task_b = ShellTask(
         name="B",
-        cmd="true",
-        inputs=[task_d],
-        outputs=[str(tmp_path / "b.txt")],
-    )
-    task_c = ShellTask(
-        name="C",
-        cmd="true",
-        inputs=[task_d],
-        outputs=[str(tmp_path / "c.txt")],
-    )
-    # B and C need to create their outputs
-    task_b = ShellTask(
-        name="B",
         cmd=f"touch {tmp_path / 'b.txt'}",
         inputs=[task_d],
         outputs=[str(tmp_path / "b.txt")],
@@ -275,12 +262,6 @@ async def test_deduplication_diamond(
         cmd=f"touch {tmp_path / 'c.txt'}",
         inputs=[task_d],
         outputs=[str(tmp_path / "c.txt")],
-    )
-    task_a = ShellTask(
-        name="A",
-        cmd="true",
-        inputs=[task_b, task_c],
-        outputs=[str(tmp_path / "a.txt")],
     )
     task_a = ShellTask(
         name="A",

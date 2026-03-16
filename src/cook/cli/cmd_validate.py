@@ -19,22 +19,30 @@ def cmd_validate(
     targets = match_targets(ctx.tasks, args.pattern, config.default, args.regex)
 
     all_tasks = collect_transitive(targets)
+
+    # Check if any tasks can actually be validated before creating the db
+    validatable = []
+    for task in all_tasks:
+        if not task.outputs:
+            ui.status(f"[{task.name}] skipped (no outputs or always-run dependency)")
+            continue
+        missing = [
+            Path(o).resolve() for o in task.outputs if not Path(o).resolve().exists()
+        ]
+        if missing:
+            paths = ", ".join(str(p) for p in missing)
+            ui.status(f"[{task.name}] skipped (missing outputs: {paths})")
+            continue
+        validatable.append(task)
+
+    if not validatable:
+        return 0
+
     with SqliteBuildStore(".cook.db") as store:
-        for task in all_tasks:
+        for task in validatable:
             effective = compute_effective_digest(task, store)
             if effective is None:
-                ui.status(
-                    f"[{task.name}] skipped (no outputs or always-run dependency)"
-                )
-                continue
-            missing = [
-                Path(o).resolve()
-                for o in task.outputs
-                if not Path(o).resolve().exists()
-            ]
-            if missing:
-                paths = ", ".join(str(p) for p in missing)
-                ui.status(f"[{task.name}] skipped (missing outputs: {paths})")
+                ui.status(f"[{task.name}] skipped (always-run dependency)")
                 continue
             store.save(TaskRecord(task_id=task.task_id, digest=effective))
             ui.status(f"[{task.name}] validated")

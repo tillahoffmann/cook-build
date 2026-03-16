@@ -42,9 +42,12 @@ cook exec -n [pattern]           # show what would run (--dry-run)
 cook exec -k [pattern]           # keep going on failure (--keep-going)
 cook exec -j4 [pattern]          # run up to 4 tasks in parallel (--jobs)
 cook exec -s [pattern]           # stream task output to terminal (--stream)
+cook build <output-pattern>      # run tasks that produce matching outputs
 cook inspect [pattern]           # show dependency graph and staleness
+cook inspect --json [pattern]    # JSON lines output
 cook ls [pattern]                # list task names
 cook ls -s [pattern]             # list only stale tasks (--stale)
+cook ls --json [pattern]         # JSON lines output
 cook invalidate <pattern>        # force tasks to re-run next time
 cook validate <pattern>          # mark tasks as up-to-date without running
 ```

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol
 
+from .executor import registered_executor_names
 from .task import Task
 
 
@@ -67,8 +68,6 @@ def resolve_file_deps(tasks: dict[str, Task]) -> dict[str, Task]:
 
 def check_extra_keys(tasks: dict[str, Task]) -> dict[str, Task]:
     """Check that all top-level extra keys match registered executor names."""
-    from .executor import registered_executor_names
-
     valid = registered_executor_names()
     for task in tasks.values():
         unknown = set(task.extra) - valid

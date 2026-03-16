@@ -91,19 +91,14 @@ class Output:
         timing = self.style.dim(f"({elapsed:.1f}s)")
         print(f"{counter} {action}  {name} {timing}", file=sys.stderr)
 
-    def task_failed(
-        self, name: str, elapsed: float, error: str, output: str = ""
-    ) -> None:
+    def task_failed(self, name: str, elapsed: float, message: str) -> None:
         # Always show failures, even in quiet mode
         counter = self._counter()
         action = self.style.red("FAILED")
         timing = self.style.dim(f"({elapsed:.1f}s)")
         print(f"{counter} {action}  {name} {timing}", file=sys.stderr)
-        for line in error.splitlines():
+        for line in message.splitlines():
             print(f"         {line}", file=sys.stderr)
-        if output:
-            for line in output.splitlines():
-                print(f"         {line}", file=sys.stderr)
 
     def task_skipped(self, name: str, failed_dep: str) -> None:
         if self.verbosity < Verbosity.NORMAL:

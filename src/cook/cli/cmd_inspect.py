@@ -48,7 +48,7 @@ def cmd_inspect(
     args: argparse.Namespace, config: Config, ctx: Context, ui: Output
 ) -> int:
     targets = match_targets(ctx.tasks, args.pattern, config.default, args.regex)
-    use_json = getattr(args, "json", False)
+    use_json = args.json
 
     all_tasks = collect_transitive(targets)
     db_path = Path(".cook.db")

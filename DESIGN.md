@@ -198,6 +198,10 @@ cook invalidate <pattern> [-r]
 
 cook validate <pattern> [-r]
     Mark tasks as up-to-date without running them.
+
+cook build <output-pattern> [-n] [-k] [-j N] [-x executor] [-r] [-s]
+    Run tasks whose outputs match the pattern. Like exec but matches
+    against output file paths instead of task names.
 ```
 
 **`cook invalidate`** does not cascade: invalidating a task forces it to re-run, but its dependents only re-run if the invalidated task's effective digest actually changes after re-execution.
@@ -278,7 +282,7 @@ Build failed: 3 cooked, 1 fresh, 1 failed in 0.6s
 Output is controlled by:
 - `-q` / `--quiet` — errors and summary only
 - `-v` / `--verbose` — detailed output including commands
-- `-s` / `--stream` — pass-through mode, no capture (implies `-j1`)
+- `-s` / `--stream` — pass-through mode, no capture (best used with `-j1` to avoid interleaved output)
 - `--color=auto|always|never` — color detection respects `NO_COLOR` env
 
 ---

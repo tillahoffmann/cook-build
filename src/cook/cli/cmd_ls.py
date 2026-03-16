@@ -29,7 +29,7 @@ def cmd_ls(args: argparse.Namespace, config: Config, ctx: Context, ui: Output) -
     else:
         tasks = list(ctx.tasks.values())
 
-    use_json = getattr(args, "json", False)
+    use_json = args.json
 
     if args.stale or args.current:
         db_path = Path(".cook.db")
