@@ -93,6 +93,7 @@ def _build_parser() -> argparse.ArgumentParser:
     inspect_p.add_argument(
         "-r", "--re", action="store_true", dest="regex", help="Use regex matching"
     )
+    inspect_p.add_argument("--json", action="store_true", help="Output as JSON lines")
 
     invalidate_p = sub.add_parser("invalidate", help="Invalidate stored digests")
     invalidate_p.add_argument("pattern", nargs="*")
@@ -113,6 +114,7 @@ def _build_parser() -> argparse.ArgumentParser:
     ls_p.add_argument(
         "-r", "--re", action="store_true", dest="regex", help="Use regex matching"
     )
+    ls_p.add_argument("--json", action="store_true", help="Output as JSON lines")
     ls_filter = ls_p.add_mutually_exclusive_group()
     ls_filter.add_argument(
         "-s", "--stale", action="store_true", help="Only show stale tasks"

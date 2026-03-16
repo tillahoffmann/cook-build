@@ -1,22 +1,54 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 from ..config import Config
 from ..context import Context
 from ..scheduler import is_stale
-from ..store import FileDigestCache
+from ..store import FileDigestCache, TaskRecord
 from ..store.sqlite import SqliteBuildStore
+from ..task import ShellTask, Task
 from ..transform import collect_transitive
 from ..ui import Output
 from .util import match_targets, print_task_detail
+
+
+def _task_to_dict(
+    task: Task, stale: bool, record: TaskRecord | None
+) -> dict[str, object]:
+    obj: dict[str, object] = {
+        "name": task.name,
+        "stale": stale,
+        "deps": [d.name for d in task.task_deps],
+        "inputs": [str(f) for f in task.file_inputs],
+        "outputs": [str(o) for o in task.outputs],
+    }
+    if isinstance(task, ShellTask) and task.cmd:
+        obj["cmd"] = task.cmd
+    if record is not None:
+        history: dict[str, object] = {}
+        if record.last_started:
+            history["last_started"] = record.last_started.isoformat()
+        if record.last_succeeded:
+            history["last_succeeded"] = record.last_succeeded.isoformat()
+        if record.last_failed:
+            history["last_failed"] = record.last_failed.isoformat()
+        if record.error:
+            history["error"] = record.error
+        if record.duration is not None:
+            history["duration"] = round(record.duration, 3)
+        if history:
+            obj["history"] = history
+    return obj
 
 
 def cmd_inspect(
     args: argparse.Namespace, config: Config, ctx: Context, ui: Output
 ) -> int:
     targets = match_targets(ctx.tasks, args.pattern, config.default, args.regex)
+    use_json = getattr(args, "json", False)
 
     all_tasks = collect_transitive(targets)
     db_path = Path(".cook.db")
@@ -26,9 +58,15 @@ def cmd_inspect(
             for task in all_tasks:
                 stale = is_stale(task, store, cache)
                 record = store.get(task.task_id)
-                print_task_detail(task, stale, record, ui)
+                if use_json:
+                    print(json.dumps(_task_to_dict(task, stale, record)))
+                else:
+                    print_task_detail(task, stale, record, ui)
     else:
         for task in all_tasks:
-            print_task_detail(task, True, None, ui)
+            if use_json:
+                print(json.dumps(_task_to_dict(task, True, None)))
+            else:
+                print_task_detail(task, True, None, ui)
 
     return 0

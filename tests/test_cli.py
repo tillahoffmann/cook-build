@@ -1610,3 +1610,127 @@ def test_build_one_pattern_no_match(
     rc = main(["build", "*.txt", "*.xyz"])
     assert rc == 1
     assert "*.xyz" in capsys.readouterr().err
+
+
+# --- --json flag ---
+
+
+def test_ls_json(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="alpha", cmd="true")
+        ctx.sh(name="beta", cmd="true")
+        """,
+    )
+    rc = main(["ls", "--json"])
+    assert rc == 0
+    import json
+
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert len(lines) == 2
+    objs = [json.loads(line) for line in lines]
+    names = {o["name"] for o in objs}
+    assert names == {"alpha", "beta"}
+
+
+def test_ls_json_with_stale(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="t", cmd="true")
+        """,
+    )
+    rc = main(["ls", "--json", "--stale"])
+    assert rc == 0
+    import json
+
+    lines = capsys.readouterr().out.strip().splitlines()
+    obj = json.loads(lines[0])
+    assert obj["name"] == "t"
+    assert obj["stale"] is True
+
+
+def test_inspect_json(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    outfile = project / "out.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="gen", cmd="echo ok", outputs=["{outfile}"])
+        """,
+    )
+    rc = main(["inspect", "--json", "gen"])
+    assert rc == 0
+    import json
+
+    lines = capsys.readouterr().out.strip().splitlines()
+    obj = json.loads(lines[0])
+    assert obj["name"] == "gen"
+    assert obj["stale"] is True
+    assert obj["cmd"] == "echo ok"
+    assert str(outfile) in obj["outputs"]
+
+
+def test_inspect_json_with_history(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    outfile = project / "out.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="gen", cmd="echo ok > {outfile}", outputs=["{outfile}"])
+        """,
+    )
+    # Run first to create history
+    rc = main(["exec", "gen"])
+    assert rc == 0
+    capsys.readouterr()
+
+    rc = main(["inspect", "--json", "gen"])
+    assert rc == 0
+    import json
+
+    lines = capsys.readouterr().out.strip().splitlines()
+    obj = json.loads(lines[0])
+    assert obj["name"] == "gen"
+    assert obj["stale"] is False
+    assert "history" in obj
+    assert "last_succeeded" in obj["history"]
+    assert "duration" in obj["history"]
+
+
+def test_inspect_json_failed_task(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    outfile = project / "out.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="fail", cmd="exit 1", outputs=["{outfile}"])
+        """,
+    )
+    # Run to create a failure record
+    rc = main(["exec", "fail"])
+    assert rc == 1
+    capsys.readouterr()
+
+    rc = main(["inspect", "--json", "fail"])
+    assert rc == 0
+    import json
+
+    lines = capsys.readouterr().out.strip().splitlines()
+    obj = json.loads(lines[0])
+    assert obj["name"] == "fail"
+    assert "history" in obj
+    assert "last_failed" in obj["history"]
+    assert "error" in obj["history"]
