@@ -103,7 +103,7 @@ class SlurmConfig:
                 )
 
 
-@register_executor("slurm", config_cls=SlurmConfig)
+@register_executor("slurm")
 class SlurmExecutor(Executor):
     def __init__(
         self,

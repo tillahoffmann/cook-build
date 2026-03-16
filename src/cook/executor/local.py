@@ -27,7 +27,7 @@ class LocalConfig:
             )
 
 
-@register_executor("local", config_cls=LocalConfig)
+@register_executor("local")
 class LocalExecutor(Executor):
     def __init__(self, max_concurrent: int = 1) -> None:
         super().__init__(max_concurrent)

@@ -94,15 +94,14 @@ class Executor(ABC):
             await handler(self, task)
 
 
-_executor_registry: dict[str, tuple[type[Executor], type[Any] | None]] = {}
+_executor_registry: dict[str, type[Executor]] = {}
 
 
 def register_executor(
     name: str,
-    config_cls: type[Any] | None = None,
 ) -> Callable[[type[_E]], type[_E]]:
     def decorator(cls: type[_E]) -> type[_E]:
-        _executor_registry[name] = (cls, config_cls)
+        _executor_registry[name] = cls
         return cls
 
     return decorator
@@ -112,7 +111,7 @@ def get_executor(name: str) -> type[Executor]:
     if name not in _executor_registry:
         available = ", ".join(sorted(_executor_registry)) or "(none)"
         raise ValueError(f"Unknown executor {name!r}. Available: {available}")
-    return _executor_registry[name][0]
+    return _executor_registry[name]
 
 
 def registered_executor_names() -> set[str]:
