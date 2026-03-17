@@ -21,4 +21,14 @@ def sh(
     )
 
 
-__all__ = ["Context", "ShellTask", "Task", "get_context", "sh"]
+def create_task(*args: Any, **kwargs: Any) -> None:
+    raise NotImplementedError(
+        "create_task() was removed in cook-build 0.2. "
+        "Use cook.sh() instead:\n\n"
+        "  from cook import sh\n"
+        "  sh(name='my-task', cmd='echo hello', inputs=[...], outputs=[...])\n\n"
+        "For the old API, pin cook-build<1.0 in your dependencies."
+    )
+
+
+__all__ = ["Context", "ShellTask", "Task", "create_task", "get_context", "sh"]

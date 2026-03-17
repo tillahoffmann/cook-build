@@ -226,6 +226,13 @@ def test_resolve_absolute(tmp_path: Path) -> None:
     assert resolved == Path("/usr/include/stdio.h").resolve()
 
 
+def test_create_task_raises() -> None:
+    from cook import create_task
+
+    with pytest.raises(NotImplementedError, match="cook.sh"):
+        create_task(name="old-style", action="echo hello")
+
+
 def test_db_path(tmp_path: Path) -> None:
     with Context(project_root=tmp_path) as ctx:
         assert ctx.db_path == tmp_path / ".cook.db"
