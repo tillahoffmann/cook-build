@@ -9,6 +9,9 @@ dependencies = []
 [project.scripts]
 cook = "cook.cli:main"
 
+[tool.setuptools.package-data]
+cook = ["static/**/*"]
+
 [dependency-groups]
 dev = [
     "pre-commit>=4.5.1",

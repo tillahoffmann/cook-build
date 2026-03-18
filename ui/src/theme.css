@@ -1,0 +1,123 @@
+@import "tailwindcss";
+
+/* Bridge CSS custom properties to Tailwind v4 utility classes */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-destructive: var(--destructive);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+}
+
+/* Dark theme (default) — Apple system gray scale */
+:root {
+  --radius: 0.625rem;
+
+  /* shadcn semantic tokens — neutral grays */
+  --background: #1c1c1e;
+  --foreground: #f2f2f7;
+  --card: #2c2c2e;
+  --card-foreground: #f2f2f7;
+  --muted: #3a3a3c;
+  --muted-foreground: #8e8e93;
+  --border: #48484a;
+  --input: #48484a;
+  --ring: #0091ff;
+  --primary: #f2f2f7;
+  --primary-foreground: #1c1c1e;
+  --secondary: #3a3a3c;
+  --secondary-foreground: #f2f2f7;
+  --destructive: #ff4245;
+  --accent: #3a3a3c;
+  --accent-foreground: #f2f2f7;
+
+  /* Surfaces */
+  --color-bg: #1c1c1e;
+  --color-surface: #2c2c2e;
+  --color-surface-raised: #3a3a3c;
+  --color-text: #f2f2f7;
+  --color-text-secondary: #8e8e93;
+
+  /* Status — Apple system colors (dark) */
+  --color-fresh: #30d158;
+  --color-stale: #ff4245;
+  --color-never-run: #8e8e93;
+  --color-always-run: #ff9230;
+
+  /* Graph */
+  --color-edge: #636366;
+  --color-highlight: #0091ff;
+
+  /* Semantic — distinct hues for different data types */
+  --color-cook-input: #3cd3fe;     /* cyan — file inputs */
+  --color-output: #30d158;          /* green — file outputs */
+  --color-deps: #ff9230;            /* orange — dependencies */
+  --color-dependents: #db34f2;      /* purple — dependents */
+}
+
+/* Light theme — Apple system gray scale */
+.light {
+  --background: #f2f2f7;
+  --foreground: #1c1c1e;
+  --card: #ffffff;
+  --card-foreground: #1c1c1e;
+  --muted: #e5e5ea;
+  --muted-foreground: #8e8e93;
+  --border: #d1d1d6;
+  --input: #d1d1d6;
+  --ring: #0088ff;
+  --primary: #1c1c1e;
+  --primary-foreground: #f2f2f7;
+  --secondary: #e5e5ea;
+  --secondary-foreground: #1c1c1e;
+  --destructive: #ff383c;
+  --accent: #e5e5ea;
+  --accent-foreground: #1c1c1e;
+
+  --color-bg: #f2f2f7;
+  --color-surface: #ffffff;
+  --color-surface-raised: #e5e5ea;
+  --color-text: #1c1c1e;
+  --color-text-secondary: #8e8e93;
+
+  --color-fresh: #34c759;
+  --color-stale: #ff383c;
+  --color-never-run: #8e8e93;
+  --color-always-run: #ff8d28;
+
+  --color-edge: #c7c7cc;
+  --color-highlight: #0088ff;
+
+  --color-cook-input: #007eae;
+  --color-output: #008932;
+  --color-deps: #c55300;
+  --color-dependents: #b02fc2;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}

@@ -9,3 +9,5 @@ dist/
 playground/
 tickets/
 wheels/
+src/cook/static/
+ui/node_modules/

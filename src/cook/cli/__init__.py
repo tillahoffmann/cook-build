@@ -17,6 +17,7 @@ from .cmd_exec import cmd_exec
 from .cmd_inspect import cmd_inspect
 from .cmd_invalidate import cmd_invalidate
 from .cmd_ls import cmd_ls
+from .cmd_ui import cmd_ui
 from .cmd_validate import cmd_validate
 from .util import load_recipe
 
@@ -129,6 +130,17 @@ def _build_parser() -> argparse.ArgumentParser:
         "-c", "--current", action="store_true", help="Only show up-to-date tasks"
     )
 
+    ui_p = sub.add_parser("ui", help="Interactive DAG visualization")
+    ui_p.add_argument("pattern", nargs="*")
+    ui_p.add_argument(
+        "--port", type=int, default=None, help="Server port (default: auto)"
+    )
+    ui_p.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Don't auto-open the browser",
+    )
+
     return parser
 
 
@@ -169,6 +181,7 @@ def main(argv: list[str] | None = None) -> int:
         "invalidate": cmd_invalidate,
         "validate": cmd_validate,
         "list": cmd_ls,
+        "ui": cmd_ui,
     }
 
     try:
