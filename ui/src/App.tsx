@@ -14,7 +14,7 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import dagre from '@dagrejs/dagre'
-import { fetchTasks, fetchEdges, fetchConfig } from './api'
+import { fetchTasks, fetchEdges, fetchConfig, pollTasks, pollEdges } from './api'
 import type { TaskSummary, Edge, AppConfig } from './types'
 import { TaskNode } from './components/TaskNode'
 import { TaskDetail } from './components/TaskDetail'
@@ -48,6 +48,7 @@ function layoutGraph(
   matchedNames: Set<string>,
   hasPattern: boolean,
   selectedTask: string | null,
+  highlightedTask: string | null,
 ): { nodes: Node[]; edges: FlowEdge[] } {
   const g = new dagre.graphlib.Graph()
   g.setDefaultEdgeLabel(() => ({}))
@@ -68,7 +69,12 @@ function layoutGraph(
       id: task.name,
       type: 'task',
       position: { x: pos.x - 75, y: pos.y - 25 },
-      data: { ...task, dimmed: hasPattern && !matchedNames.has(task.name), selected: task.name === selectedTask },
+      data: {
+        ...task,
+        dimmed: hasPattern && !matchedNames.has(task.name),
+        selected: task.name === selectedTask,
+        highlighted: task.name === highlightedTask,
+      },
     }
   })
 
@@ -89,6 +95,7 @@ function Flow() {
   const [edgeData, setEdgeData] = useState<Edge[]>([])
   const [config, setConfig] = useState<AppConfig | null>(null)
   const [selectedTask, setSelectedTask] = useState<string | null>(null)
+  const [highlightedTask, setHighlightedTask] = useState<string | null>(null)
   const [pattern, setPattern] = useState('')
   const [isRegex, setIsRegex] = useState(false)
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
@@ -97,6 +104,7 @@ function Flow() {
   const [loadError, setLoadError] = useState<string | null>(null)
 
   useEffect(() => {
+    // Initial load
     Promise.all([fetchTasks(), fetchEdges(), fetchConfig()])
       .then(([t, e, c]) => {
         setTasks(t)
@@ -106,6 +114,17 @@ function Flow() {
         document.title = `cook — ${c.project_root}`
       })
       .catch((e) => setLoadError(e.message))
+
+    // Poll for updates every 3 seconds (conditional — skips if unchanged)
+    const interval = setInterval(() => {
+      Promise.all([pollTasks(), pollEdges()])
+        .then(([t, e]) => {
+          if (t) setTasks(t)
+          if (e) setEdgeData(e)
+        })
+        .catch(() => {})
+    }, 3000)
+    return () => clearInterval(interval)
   }, [])
 
   const matchedNames = useMemo(() => {
@@ -115,10 +134,10 @@ function Flow() {
 
   useEffect(() => {
     if (tasks.length === 0) return
-    const { nodes: n, edges: e } = layoutGraph(tasks, edgeData, matchedNames, !!pattern, selectedTask)
+    const { nodes: n, edges: e } = layoutGraph(tasks, edgeData, matchedNames, !!pattern, selectedTask, highlightedTask)
     setNodes(n)
     setEdges(e)
-  }, [tasks, edgeData, matchedNames, selectedTask, setNodes, setEdges])
+  }, [tasks, edgeData, matchedNames, selectedTask, highlightedTask, setNodes, setEdges])
 
   const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
     setSelectedTask(node.id)
@@ -206,6 +225,7 @@ function Flow() {
               edges={edgeData}
               onNavigate={handleNavigate}
               onFocus={handleFocus}
+              onHighlight={setHighlightedTask}
               onClose={() => setSelectedTask(null)}
             />
           </ResizablePanel>

@@ -2,6 +2,7 @@ export interface TaskSummary {
   name: string
   type: string
   stale: boolean
+  failed?: boolean
   reason: string | null
   deps: string[]
   inputs: string[]

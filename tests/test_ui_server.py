@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import textwrap
 import threading
+from collections.abc import Callable, Generator
 from http.client import HTTPConnection
+from http.server import HTTPServer
 from pathlib import Path
 
 import pytest
@@ -12,6 +14,46 @@ from cook.cli import main
 from cook.cli.cmd_ui import _build_graph_data, _find_free_port, _UIHandler
 from cook.context import Context
 from cook.task import ShellTask
+
+
+@pytest.fixture
+def ui_server() -> Generator[
+    Callable[..., tuple[HTTPServer, int, HTTPConnection]],
+    None,
+    None,
+]:
+    """Start a UI server, yield a factory. Servers are shut down automatically."""
+    servers: list[HTTPServer] = []
+
+    def start(
+        ctx: Context, static_dir: Path | None = None
+    ) -> tuple[HTTPServer, int, HTTPConnection]:
+        port = _find_free_port()
+        handler_class = type(
+            "Handler",
+            (_UIHandler,),
+            {
+                "ctx": ctx,
+                "config_data": {
+                    "pattern": None,
+                    "project_root": str(ctx.project_root),
+                },
+                "static_dir": static_dir,
+            },
+        )
+        server = HTTPServer(("127.0.0.1", port), handler_class)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        servers.append(server)
+        return server, port, HTTPConnection("127.0.0.1", port)
+
+    yield start
+
+    for s in servers:
+        s.shutdown()
+    # Reset class-level cache to prevent cross-test contamination
+    _UIHandler._cache = {}
+    _UIHandler._cache_mtime = -1
 
 
 @pytest.fixture
@@ -71,6 +113,28 @@ def test_build_graph_data_with_store(project: Path) -> None:
     stale, reason, record = detail["step-a"]
     assert not stale
     assert record is not None
+
+
+def test_build_graph_data_marks_failed(project: Path) -> None:
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="fail", cmd="exit 1", outputs=["out.txt"])
+        """,
+    )
+    # Run to create a failure record
+    rc = main(["run", "fail"])
+    assert rc == 1
+
+    with Context(project_root=project) as ctx:
+        ctx.sh(name="fail", cmd="exit 1", outputs=["out.txt"])
+        ctx.validate()
+        tasks, _, _ = _build_graph_data(ctx)
+
+    task_dict = {t["name"]: t for t in tasks}
+    assert task_dict["fail"].get("failed") is True
 
 
 def test_task_detail_includes_history(project: Path) -> None:
@@ -151,7 +215,7 @@ def test_find_free_port_fallback() -> None:
         blocker.close()
 
 
-def test_api_tasks_endpoint(project: Path) -> None:
+def test_api_tasks_endpoint(project: Path, ui_server) -> None:  # type: ignore[no-untyped-def]
     _write_recipe(
         project,
         """\
@@ -160,83 +224,72 @@ def test_api_tasks_endpoint(project: Path) -> None:
         ctx.sh(name="hello", cmd="echo hi", outputs=["out.txt"])
         """,
     )
-    from http.server import HTTPServer
-
     from cook.cli.util import load_recipe
 
     with Context(project_root=project) as ctx:
         load_recipe(str(project / "recipe.py"))
         ctx.validate()
-        tasks_api, edges, detail_cache = _build_graph_data(ctx)
 
-        port = _find_free_port()
-        handler_class = type(
-            "Handler",
-            (_UIHandler,),
-            {
-                "tasks_data": tasks_api,
-                "edges_data": edges,
-                "detail_cache": detail_cache,
-                "task_objects": ctx.tasks,
-                "config_data": {"pattern": None, "project_root": str(project)},
-                "static_dir": None,
-            },
-        )
-        server = HTTPServer(("127.0.0.1", port), handler_class)
-        thread = threading.Thread(target=server.serve_forever)
-        thread.daemon = True
-        thread.start()
+        _, _, conn = ui_server(ctx)
 
-        try:
-            conn = HTTPConnection("127.0.0.1", port)
+        # Test /api/tasks
+        conn.request("GET", "/api/tasks")
+        resp = conn.getresponse()
+        assert resp.status == 200
+        tasks = json.loads(resp.read())
+        assert len(tasks) == 1
+        assert tasks[0]["name"] == "hello"
 
-            # Test /api/tasks
-            conn.request("GET", "/api/tasks")
-            resp = conn.getresponse()
-            assert resp.status == 200
-            tasks = json.loads(resp.read())
-            assert len(tasks) == 1
-            assert tasks[0]["name"] == "hello"
+        # Test Last-Modified header
+        last_modified = resp.getheader("Last-Modified")
+        assert last_modified is not None
 
-            # Test /api/edges
-            conn.request("GET", "/api/edges")
-            resp = conn.getresponse()
-            assert resp.status == 200
-            edges = json.loads(resp.read())
-            assert isinstance(edges, list)
+        # Test If-Modified-Since → 304
+        conn.request("GET", "/api/tasks", headers={"If-Modified-Since": last_modified})
+        resp = conn.getresponse()
+        assert resp.status == 304
 
-            # Test /api/tasks/:name
-            conn.request("GET", "/api/tasks/hello")
-            resp = conn.getresponse()
-            assert resp.status == 200
-            detail = json.loads(resp.read())
-            assert detail["name"] == "hello"
-            assert "history" in detail
+        # Test /api/edges with Last-Modified
+        conn.request("GET", "/api/edges")
+        resp = conn.getresponse()
+        assert resp.status == 200
+        edges_lm = resp.getheader("Last-Modified")
+        assert edges_lm is not None
+        edges = json.loads(resp.read())
+        assert isinstance(edges, list)
 
-            # Test /api/tasks/:name not found
-            conn.request("GET", "/api/tasks/nonexistent")
-            resp = conn.getresponse()
-            assert resp.status == 404
+        # Test edges If-Modified-Since → 304
+        conn.request("GET", "/api/edges", headers={"If-Modified-Since": edges_lm})
+        resp = conn.getresponse()
+        assert resp.status == 304
 
-            # Test /api/config
-            conn.request("GET", "/api/config")
-            resp = conn.getresponse()
-            assert resp.status == 200
-            config = json.loads(resp.read())
-            assert config["pattern"] is None
+        # Test /api/tasks/:name
+        conn.request("GET", "/api/tasks/hello")
+        resp = conn.getresponse()
+        assert resp.status == 200
+        detail = json.loads(resp.read())
+        assert detail["name"] == "hello"
+        assert "history" in detail
 
-            # Test missing static dir
-            conn.request("GET", "/")
-            resp = conn.getresponse()
-            assert resp.status == 404
-        finally:
-            server.shutdown()
+        # Test /api/tasks/:name not found
+        conn.request("GET", "/api/tasks/nonexistent")
+        resp = conn.getresponse()
+        assert resp.status == 404
+
+        # Test /api/config
+        conn.request("GET", "/api/config")
+        resp = conn.getresponse()
+        assert resp.status == 200
+        config = json.loads(resp.read())
+        assert config["pattern"] is None
+
+        # Test missing static dir
+        conn.request("GET", "/")
+        resp = conn.getresponse()
+        assert resp.status == 404
 
 
-def test_static_file_serving(project: Path) -> None:
-    from http.server import HTTPServer
-
-    # Create a fake static dir
+def test_static_file_serving(project: Path, ui_server) -> None:  # type: ignore[no-untyped-def]
     static = project / "static"
     static.mkdir()
     (static / "index.html").write_text("<html>cook ui</html>")
@@ -248,103 +301,50 @@ def test_static_file_serving(project: Path) -> None:
     with Context(project_root=project) as ctx:
         ctx.sh(name="t", cmd="true", outputs=["out.txt"])
         ctx.validate()
-        tasks_api, edges, detail_cache = _build_graph_data(ctx)
 
-        port = _find_free_port()
-        handler_class = type(
-            "Handler",
-            (_UIHandler,),
-            {
-                "tasks_data": tasks_api,
-                "edges_data": edges,
-                "detail_cache": detail_cache,
-                "task_objects": ctx.tasks,
-                "config_data": {"pattern": None, "project_root": str(project)},
-                "static_dir": static,
-            },
-        )
-        server = HTTPServer(("127.0.0.1", port), handler_class)
-        thread = threading.Thread(target=server.serve_forever)
-        thread.daemon = True
-        thread.start()
+        _, _, conn = ui_server(ctx, static_dir=static)
 
-        try:
-            conn = HTTPConnection("127.0.0.1", port)
+        conn.request("GET", "/")
+        resp = conn.getresponse()
+        assert resp.status == 200
+        assert b"cook ui" in resp.read()
 
-            # Test index.html
-            conn.request("GET", "/")
-            resp = conn.getresponse()
-            assert resp.status == 200
-            assert b"cook ui" in resp.read()
+        conn.request("GET", "/assets/app.js")
+        resp = conn.getresponse()
+        assert resp.status == 200
+        assert resp.getheader("Content-Type") == "application/javascript"
 
-            # Test JS asset
-            conn.request("GET", "/assets/app.js")
-            resp = conn.getresponse()
-            assert resp.status == 200
-            assert resp.getheader("Content-Type") == "application/javascript"
+        conn.request("GET", "/assets/app.css")
+        resp = conn.getresponse()
+        assert resp.status == 200
+        assert resp.getheader("Content-Type") == "text/css"
 
-            # Test CSS asset
-            conn.request("GET", "/assets/app.css")
-            resp = conn.getresponse()
-            assert resp.status == 200
-            assert resp.getheader("Content-Type") == "text/css"
+        conn.request("GET", "/some/unknown/path")
+        resp = conn.getresponse()
+        assert resp.status == 200
+        assert b"cook ui" in resp.read()
 
-            # Test SPA fallback (unknown path serves index.html)
-            conn.request("GET", "/some/unknown/path")
-            resp = conn.getresponse()
-            assert resp.status == 200
-            assert b"cook ui" in resp.read()
-
-            # API still works alongside static
-            conn.request("GET", "/api/tasks")
-            resp = conn.getresponse()
-            assert resp.status == 200
-        finally:
-            server.shutdown()
+        conn.request("GET", "/api/tasks")
+        resp = conn.getresponse()
+        assert resp.status == 200
 
 
-def test_static_dir_no_index(project: Path) -> None:
-    from http.server import HTTPServer
-
-    # Static dir exists but has no index.html
+def test_static_dir_no_index(project: Path, ui_server) -> None:  # type: ignore[no-untyped-def]
     static = project / "static"
     static.mkdir()
 
     with Context(project_root=project) as ctx:
         ctx.sh(name="t", cmd="true", outputs=["out.txt"])
         ctx.validate()
-        tasks_api, edges, detail_cache = _build_graph_data(ctx)
 
-        port = _find_free_port()
-        handler_class = type(
-            "Handler",
-            (_UIHandler,),
-            {
-                "tasks_data": tasks_api,
-                "edges_data": edges,
-                "detail_cache": detail_cache,
-                "task_objects": ctx.tasks,
-                "config_data": {"pattern": None, "project_root": str(project)},
-                "static_dir": static,
-            },
-        )
-        server = HTTPServer(("127.0.0.1", port), handler_class)
-        thread = threading.Thread(target=server.serve_forever)
-        thread.daemon = True
-        thread.start()
+        _, _, conn = ui_server(ctx, static_dir=static)
 
-        try:
-            conn = HTTPConnection("127.0.0.1", port)
-            conn.request("GET", "/")
-            resp = conn.getresponse()
-            assert resp.status == 404
-        finally:
-            server.shutdown()
+        conn.request("GET", "/")
+        resp = conn.getresponse()
+        assert resp.status == 404
 
 
-def test_path_traversal_blocked(project: Path) -> None:
-    from http.server import HTTPServer
-
+def test_path_traversal_blocked(project: Path, ui_server) -> None:  # type: ignore[no-untyped-def]
     static = project / "static"
     static.mkdir()
     (static / "index.html").write_text("<html>ok</html>")
@@ -352,33 +352,12 @@ def test_path_traversal_blocked(project: Path) -> None:
     with Context(project_root=project) as ctx:
         ctx.sh(name="t", cmd="true", outputs=["out.txt"])
         ctx.validate()
-        tasks_api, edges, detail_cache = _build_graph_data(ctx)
 
-        port = _find_free_port()
-        handler_class = type(
-            "Handler",
-            (_UIHandler,),
-            {
-                "tasks_data": tasks_api,
-                "edges_data": edges,
-                "detail_cache": detail_cache,
-                "task_objects": ctx.tasks,
-                "config_data": {"pattern": None, "project_root": str(project)},
-                "static_dir": static,
-            },
-        )
-        server = HTTPServer(("127.0.0.1", port), handler_class)
-        thread = threading.Thread(target=server.serve_forever)
-        thread.daemon = True
-        thread.start()
+        _, _, conn = ui_server(ctx, static_dir=static)
 
-        try:
-            conn = HTTPConnection("127.0.0.1", port)
-            conn.request("GET", "/../../etc/passwd")
-            resp = conn.getresponse()
-            assert resp.status == 403
-        finally:
-            server.shutdown()
+        conn.request("GET", "/../../etc/passwd")
+        resp = conn.getresponse()
+        assert resp.status == 403
 
 
 def test_guess_content_type() -> None:

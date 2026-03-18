@@ -220,6 +220,22 @@ def test_resolve_relative(tmp_path: Path) -> None:
     assert resolved == (tmp_path / "src" / "foo.c").resolve()
 
 
+def test_relative_inside_project(tmp_path: Path) -> None:
+    with Context(project_root=tmp_path) as ctx:
+        assert ctx.relative(tmp_path / "src" / "foo.c") == Path("src/foo.c")
+
+
+def test_relative_outside_project(tmp_path: Path) -> None:
+    with Context(project_root=tmp_path) as ctx:
+        outside = Path("/usr/include/stdio.h")
+        assert ctx.relative(outside) == outside
+
+
+def test_relative_already_relative(tmp_path: Path) -> None:
+    with Context(project_root=tmp_path) as ctx:
+        assert ctx.relative("foo.c") == Path("foo.c")
+
+
 def test_resolve_absolute(tmp_path: Path) -> None:
     with Context(project_root=tmp_path) as ctx:
         resolved = ctx.resolve("/usr/include/stdio.h")

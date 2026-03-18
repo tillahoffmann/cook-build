@@ -15,8 +15,9 @@ function Stat({ count, label, color }: { count: number; label: string; color: st
 }
 
 export function Summary({ tasks }: Props) {
-  const fresh = tasks.filter((t) => !t.stale).length
-  const stale = tasks.filter((t) => t.stale && t.reason !== 'never run' && !t.reason?.startsWith('always-run')).length
+  const fresh = tasks.filter((t) => !t.stale && !t.failed).length
+  const failed = tasks.filter((t) => t.failed).length
+  const stale = tasks.filter((t) => t.stale && !t.failed && t.reason !== 'never run' && !t.reason?.startsWith('always-run')).length
   const neverRun = tasks.filter((t) => t.reason === 'never run').length
   const alwaysRun = tasks.filter((t) => t.reason?.startsWith('always-run')).length
 
@@ -25,6 +26,7 @@ export function Summary({ tasks }: Props) {
       <span className="text-[12px] text-[var(--muted-foreground)]">{tasks.length} tasks</span>
       <Stat count={fresh} label="fresh" color="var(--color-fresh)" />
       <Stat count={stale} label="stale" color="var(--color-stale)" />
+      <Stat count={failed} label="failed" color="var(--color-failed)" />
       <Stat count={neverRun} label="never run" color="var(--color-never-run)" />
       <Stat count={alwaysRun} label="always-run" color="var(--color-always-run)" />
     </div>

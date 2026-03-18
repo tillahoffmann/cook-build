@@ -1,9 +1,10 @@
 import { Handle, Position } from '@xyflow/react'
 import type { TaskSummary } from '../types'
 
-export type TaskNodeData = TaskSummary & { dimmed: boolean; selected: boolean }
+export type TaskNodeData = TaskSummary & { dimmed: boolean; selected: boolean; highlighted: boolean }
 
 function statusColor(task: TaskSummary): string {
+  if (task.failed) return 'var(--color-failed)'
   if (!task.stale) return 'var(--color-fresh)'
   if (task.reason?.startsWith('always-run')) return 'var(--color-always-run)'
   if (task.reason === 'never run') return 'var(--color-never-run)'
@@ -20,7 +21,9 @@ export function TaskNode({ data }: { data: TaskNodeData }) {
         opacity: data.dimmed ? 0.2 : 1,
         boxShadow: data.selected
           ? '0 0 0 2px var(--color-highlight), 0 4px 16px rgba(0,0,0,0.25)'
-          : '0 1px 3px rgba(0,0,0,0.2)',
+          : data.highlighted
+            ? '0 0 0 1px var(--color-highlight), 0 2px 8px rgba(0,0,0,0.15)'
+            : '0 1px 3px rgba(0,0,0,0.2)',
       }}
     >
       <Handle type="target" position={Position.Top} className="!bg-transparent !border-0 !w-0 !h-0" />

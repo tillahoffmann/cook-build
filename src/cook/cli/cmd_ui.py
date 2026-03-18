@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import email.utils
 import json
 import socket
 import threading
@@ -14,20 +15,24 @@ from ..context import Context
 from ..scheduler import is_stale, staleness_reason
 from ..store import FileDigestCache, TaskRecord
 from ..store.sqlite import SqliteBuildStore
-from ..task import ShellTask, Task
+from ..task import GroupTask, ShellTask, Task
 from ..transform import collect_transitive
 from ..ui import Output
 
 
-def _task_to_api_dict(task: Task, stale: bool, reason: str | None) -> dict[str, object]:
+def _task_to_api_dict(
+    task: Task, stale: bool, reason: str | None, ctx: Context | None = None
+) -> dict[str, object]:
     obj: dict[str, object] = {
         "name": task.name,
         "type": type(task).__name__,
         "stale": stale,
         "reason": reason,
         "deps": [d.name for d in task.task_deps],
-        "inputs": [str(f) for f in task.file_inputs],
-        "outputs": [str(o) for o in task.outputs],
+        "inputs": [str(ctx.relative(f)) if ctx else str(f) for f in task.file_inputs],
+        "outputs": []
+        if isinstance(task, GroupTask)
+        else [str(ctx.relative(o)) if ctx else str(o) for o in task.outputs],
         "extra": task.extra,
     }
     if isinstance(task, ShellTask) and task.cmd:
@@ -36,9 +41,13 @@ def _task_to_api_dict(task: Task, stale: bool, reason: str | None) -> dict[str, 
 
 
 def _task_detail_dict(
-    task: Task, stale: bool, reason: str | None, record: TaskRecord | None
+    task: Task,
+    stale: bool,
+    reason: str | None,
+    record: TaskRecord | None,
+    ctx: Context | None = None,
 ) -> dict[str, object]:
-    obj = _task_to_api_dict(task, stale, reason)
+    obj = _task_to_api_dict(task, stale, reason, ctx)
     if record is not None:
         history: dict[str, object] = {}
         if record.last_started:
@@ -80,14 +89,22 @@ def _build_graph_data(
                 stale = is_stale(task, store, cache, project_root=ctx.project_root)
                 reason = staleness_reason(task, store, cache, ctx.project_root)
                 record = store.get(task.task_id)
-                tasks_api.append(_task_to_api_dict(task, stale, reason))
+                api_dict = _task_to_api_dict(task, stale, reason, ctx)
+                # Mark as failed if last run failed
+                if record and record.last_failed:
+                    if (
+                        not record.last_succeeded
+                        or record.last_failed > record.last_succeeded
+                    ):
+                        api_dict["failed"] = True
+                tasks_api.append(api_dict)
                 detail_cache[task.name] = (stale, reason, record)
                 for dep in task.task_deps:
                     edges.append({"from": dep.name, "to": task.name})
     else:
         for task in all_transitive:
             reason = "never run" if task.outputs else "always-run (no outputs)"
-            tasks_api.append(_task_to_api_dict(task, True, reason))
+            tasks_api.append(_task_to_api_dict(task, True, reason, ctx))
             detail_cache[task.name] = (True, reason, None)
             for dep in task.task_deps:
                 edges.append({"from": dep.name, "to": task.name})
@@ -111,7 +128,7 @@ def _find_free_port() -> int:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s.bind(("127.0.0.1", DEFAULT_PORT))
-            return DEFAULT_PORT
+            return DEFAULT_PORT  # pragma: no cover
     except OSError:
         pass
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -122,18 +139,76 @@ def _find_free_port() -> int:
 class _UIHandler(SimpleHTTPRequestHandler):
     """HTTP handler serving API endpoints and static files."""
 
-    tasks_data: list[dict[str, object]]
-    edges_data: list[dict[str, str]]
-    detail_cache: dict[str, tuple[bool, str | None, TaskRecord | None]]
-    task_objects: dict[str, Task]
+    ctx: Context
     config_data: dict[str, object]
     static_dir: Path | None
+    _cache: dict[str, object] = {}
+    _cache_mtime: float = -1
+
+    def _get_graph_data(
+        self,
+    ) -> tuple[
+        list[dict[str, object]],
+        list[dict[str, str]],
+        dict[str, tuple[bool, str | None, TaskRecord | None]],
+    ]:
+        """Return cached graph data, recomputing when the store changes."""
+        db_path = self.ctx.db_path
+        try:
+            mtime = db_path.stat().st_mtime
+        except FileNotFoundError:
+            mtime = 0
+
+        if mtime != _UIHandler._cache_mtime:
+            tasks_api, edges, detail_cache = _build_graph_data(self.ctx)
+            _UIHandler._cache = {
+                "tasks": tasks_api,
+                "edges": edges,
+                "detail": detail_cache,
+            }
+            _UIHandler._cache_mtime = mtime
+
+        return (
+            _UIHandler._cache["tasks"],  # type: ignore[return-value]
+            _UIHandler._cache["edges"],  # type: ignore[return-value]
+            _UIHandler._cache["detail"],  # type: ignore[return-value]
+        )
+
+    def _db_mtime(self) -> float:
+        try:
+            return self.ctx.db_path.stat().st_mtime
+        except FileNotFoundError:
+            return 0
+
+    def _is_not_modified(self, mtime: float) -> bool:
+        """Check if the client's cache is current based on If-Modified-Since."""
+        ims = self.headers.get("If-Modified-Since")
+        if ims:
+            try:
+                client_time = email.utils.parsedate_to_datetime(ims).timestamp()
+                return mtime <= client_time
+            except (ValueError, TypeError):  # pragma: no cover
+                pass
+        return False
+
+    def _handle_api_data(self, path: str) -> None:
+        """Handle /api/tasks or /api/edges with conditional caching."""
+        mtime = self._db_mtime()
+        if self._is_not_modified(mtime):
+            self.send_response(304)
+            self.end_headers()
+            return
+        tasks, edges, _ = self._get_graph_data()
+        data = tasks if path == "tasks" else edges
+        self._json_response(
+            data, last_modified=email.utils.formatdate(mtime, usegmt=True)
+        )
 
     def do_GET(self) -> None:
         if self.path == "/api/tasks":
-            self._json_response(self.tasks_data)
+            self._handle_api_data("tasks")
         elif self.path == "/api/edges":
-            self._json_response(self.edges_data)
+            self._handle_api_data("edges")
         elif self.path.startswith("/api/tasks/"):
             raw_name = self.path[len("/api/tasks/") :]
             name = urllib.parse.unquote(raw_name)
@@ -147,22 +222,27 @@ class _UIHandler(SimpleHTTPRequestHandler):
                 {"error": "UI not built. Run from the dev server."}, 404
             )
 
-    def _json_response(self, data: object, status: int = 200) -> None:
+    def _json_response(
+        self, data: object, status: int = 200, last_modified: str | None = None
+    ) -> None:
         body = json.dumps(data).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Access-Control-Allow-Origin", "*")
+        if last_modified:
+            self.send_header("Last-Modified", last_modified)
         self.end_headers()
         self.wfile.write(body)
 
     def _handle_task_detail(self, name: str) -> None:
-        task = self.task_objects.get(name)
+        task = self.ctx.tasks.get(name)
         if task is None:
             self._json_response({"error": f"Task {name!r} not found"}, 404)
             return
-        stale, reason, record = self.detail_cache[name]
-        self._json_response(_task_detail_dict(task, stale, reason, record))
+        _, _, detail_cache = self._get_graph_data()
+        stale, reason, record = detail_cache[name]
+        self._json_response(_task_detail_dict(task, stale, reason, record, self.ctx))
 
     def _serve_static(self) -> None:
         assert self.static_dir is not None
@@ -212,8 +292,6 @@ def _guess_content_type(path: Path) -> str:
 def cmd_ui(  # pragma: no cover
     args: argparse.Namespace, config: Config, ctx: Context, ui: Output
 ) -> int:
-    tasks_api, edges, detail_cache = _build_graph_data(ctx)
-
     # Find static directory
     static_dir: Path | None = None
     pkg_static = Path(__file__).parent.parent / "static"
@@ -227,10 +305,7 @@ def cmd_ui(  # pragma: no cover
         "Handler",
         (_UIHandler,),
         {
-            "tasks_data": tasks_api,
-            "edges_data": edges,
-            "detail_cache": detail_cache,
-            "task_objects": ctx.tasks,
+            "ctx": ctx,
             "config_data": {
                 "pattern": pattern,
                 "project_root": _shorten_path(ctx.project_root),

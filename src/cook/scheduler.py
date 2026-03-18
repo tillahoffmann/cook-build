@@ -176,10 +176,14 @@ def staleness_reason(
     if not task.outputs:
         return "always-run (no outputs)"
 
-    for dep in task.task_deps:
-        dep_reason = staleness_reason(dep, store, file_cache, root)
-        if dep_reason is not None:
-            return f"dependency {dep.name!r} is stale"
+    stale_deps = [
+        dep.name
+        for dep in task.task_deps
+        if staleness_reason(dep, store, file_cache, root) is not None
+    ]
+    if stale_deps:
+        n = len(stale_deps)
+        return f"{n} {'dependency is' if n == 1 else 'dependencies are'} stale"
 
     record = store.get(task.task_id)
     if record is None:
@@ -187,8 +191,14 @@ def staleness_reason(
 
     try:
         effective = compute_effective_digest(task, store, file_cache, root)
-    except FileNotFoundError as e:
-        return f"input missing: {e}"
+    except FileNotFoundError:
+        missing_inputs = [
+            str(f)
+            for f in task.file_inputs
+            if not (root / f).resolve().exists() and not Path(str(f)).resolve().exists()
+        ]
+        n = len(missing_inputs)
+        return f"{n} {'input is' if n == 1 else 'inputs are'} missing"
     if effective is None:
         return "always-run dependency"  # pragma: no cover
 
@@ -201,9 +211,10 @@ def staleness_reason(
             return pp.resolve()
         return (root / pp).resolve()
 
-    missing = [str(o) for o in task.outputs if not _resolve(o).exists()]
-    if missing:
-        return f"output missing: {', '.join(missing)}"
+    missing_outputs = [o for o in task.outputs if not _resolve(o).exists()]
+    if missing_outputs:
+        n = len(missing_outputs)
+        return f"{n} {'output is' if n == 1 else 'outputs are'} missing"
 
     return None
 

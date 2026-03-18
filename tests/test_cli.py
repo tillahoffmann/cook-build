@@ -286,7 +286,7 @@ def test_inspect_shows_why_output_missing(
     rc = main(["inspect", "build"])
     assert rc == 0
     captured = capsys.readouterr().out
-    assert "output missing" in captured
+    assert "missing" in captured
 
 
 def test_inspect_shows_why_always_run_with_store(
@@ -391,7 +391,7 @@ def test_inspect_shows_why_input_missing(
     rc = main(["inspect", "build"])
     assert rc == 0
     captured = capsys.readouterr().out
-    assert "input missing" in captured
+    assert "missing" in captured
 
 
 def test_inspect_shows_why_digest_changed(
@@ -2016,8 +2016,8 @@ def test_group_inspect(project: Path, capsys: pytest.CaptureFixture[str]) -> Non
     assert rc == 0
     out = capsys.readouterr().out
     assert "up-to-date" in out
-    # Should NOT say "output missing" for the virtual output
-    assert "output missing" not in out
+    # Should NOT say "missing" for the virtual output
+    assert "missing" not in out
 
 
 def test_group_inspect_stale(project: Path, capsys: pytest.CaptureFixture[str]) -> None:

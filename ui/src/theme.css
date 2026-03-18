@@ -56,7 +56,8 @@
 
   /* Status — Apple system colors (dark) */
   --color-fresh: #30d158;
-  --color-stale: #ff4245;
+  --color-stale: #ffd600;
+  --color-failed: #ff4245;
   --color-never-run: #8e8e93;
   --color-always-run: #ff9230;
 
@@ -97,7 +98,8 @@
   --color-text-secondary: #8e8e93;
 
   --color-fresh: #34c759;
-  --color-stale: #ff383c;
+  --color-stale: #a16a00;
+  --color-failed: #ff383c;
   --color-never-run: #8e8e93;
   --color-always-run: #ff8d28;
 

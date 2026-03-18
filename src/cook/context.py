@@ -81,6 +81,14 @@ class Context:
             return p.resolve()
         return (self.project_root / p).resolve()
 
+    def relative(self, path: str | Path) -> Path:
+        """Return a path relative to the project root, or absolute if outside."""
+        path = Path(path)
+        try:
+            return path.relative_to(self.project_root)
+        except ValueError:
+            return path
+
     @property
     def db_path(self) -> Path:
         return self.project_root / ".cook" / "store.db"
