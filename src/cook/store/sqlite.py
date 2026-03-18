@@ -9,8 +9,10 @@ from . import BuildStore, TaskRecord
 
 
 class SqliteBuildStore(BuildStore):
-    def __init__(self, path: str | Path = ".cook.db") -> None:
-        self._conn = sqlite3.connect(str(path))
+    def __init__(self, path: str | Path = ".cook/store.db") -> None:
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        self._conn = sqlite3.connect(str(p))
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._ensure_schema()
 

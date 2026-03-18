@@ -744,3 +744,14 @@ def test_validate_tasks_slurm_not_dict() -> None:
     tasks = {"t": ShellTask(name="t", cmd="run.py", extra={"slurm": "bad"})}
     with pytest.raises(ValueError, match="must be a dict"):
         SlurmExecutor.validate_tasks(tasks)
+
+
+async def test_group_task_handler(tmp_path: Path) -> None:
+    from cook.executor.slurm import SlurmExecutor
+    from cook.task import GroupTask
+
+    marker = tmp_path / ".cook" / "groups" / "my-group"
+    task = GroupTask(name="my-group", outputs=[str(marker)])
+    executor = SlurmExecutor(max_concurrent=1)
+    await executor.execute(task)
+    assert marker.exists()

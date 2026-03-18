@@ -233,6 +233,61 @@ def test_create_task_raises() -> None:
         create_task(name="old-style", action="echo hello")
 
 
+def test_group_creates_group_task(tmp_path: Path) -> None:
+    from cook.task import GroupTask
+
+    with Context(project_root=tmp_path) as ctx:
+        with ctx.group("my-group") as g:
+            ctx.sh(name="a", cmd="true", outputs=["a.txt"])
+            ctx.sh(name="b", cmd="true", outputs=["b.txt"])
+
+    assert isinstance(g, GroupTask)
+    assert "my-group" in ctx.tasks
+    deps = [d.name for d in g.task_deps]
+    assert "a" in deps
+    assert "b" in deps
+    assert g.outputs == [tmp_path / ".cook" / "groups" / "my-group"]
+
+
+def test_group_nested(tmp_path: Path) -> None:
+    with Context(project_root=tmp_path) as ctx:
+        with ctx.group("outer") as outer:
+            ctx.sh(name="a", cmd="true", outputs=["a.txt"])
+            with ctx.group("inner") as inner:
+                ctx.sh(name="b", cmd="true", outputs=["b.txt"])
+
+    # inner group is a dep of outer
+    outer_deps = [d.name for d in outer.task_deps]
+    assert "a" in outer_deps
+    assert "inner" in outer_deps
+
+    # b is a dep of inner, not directly of outer
+    inner_deps = [d.name for d in inner.task_deps]
+    assert "b" in inner_deps
+    assert "b" not in outer_deps
+
+
+def test_group_top_level_shortcut(tmp_path: Path) -> None:
+    from cook import group
+
+    with Context(project_root=tmp_path) as ctx:
+        with group("top-level") as g:
+            ctx.sh(name="t", cmd="true", outputs=["t.txt"])
+
+    assert "top-level" in ctx.tasks
+    assert "t" in [d.name for d in g.task_deps]
+
+
+def test_group_as_dependency(tmp_path: Path) -> None:
+    with Context(project_root=tmp_path) as ctx:
+        with ctx.group("data") as data:
+            ctx.sh(name="gen", cmd="true", outputs=["data.csv"])
+        ctx.sh(name="train", cmd="true", inputs=[data], outputs=["model.pt"])
+
+    train = ctx.tasks["train"]
+    assert data in [d for d in train.task_deps]
+
+
 def test_db_path(tmp_path: Path) -> None:
     with Context(project_root=tmp_path) as ctx:
-        assert ctx.db_path == tmp_path / ".cook.db"
+        assert ctx.db_path == tmp_path / ".cook" / "store.db"

@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from ..config import ConfigError
-from ..task import ShellTask, Task
+from ..task import GroupTask, ShellTask, Task
 from . import Executor, TaskExecutionError, register_executor
 
 
@@ -74,3 +75,11 @@ async def _handle_shell_task(executor: Executor, task: Task) -> None:
                 stderr=stderr_bytes.decode(errors="replace") if stderr_bytes else "",
                 stdout=stdout_bytes.decode(errors="replace") if stdout_bytes else "",
             )
+
+
+@LocalExecutor.register_handler(task_type=GroupTask)
+async def _handle_group_task(executor: Executor, task: Task) -> None:
+    for out in task.outputs:
+        p = Path(out)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.touch()

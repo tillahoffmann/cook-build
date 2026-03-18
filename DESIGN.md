@@ -291,32 +291,35 @@ Output is controlled by:
 
 ```python
 from pathlib import Path
-from cook import sh, get_context
+from cook import sh, group
 
-sources = sorted(Path("src").glob("*.c"))
-objects = []
-for src in sources:
-    objects.append(sh(
-        name=f"compile-{src.stem}",
-        cmd=f"gcc -c {src} -o {src.with_suffix('.o')}",
-        inputs=[str(src)], outputs=[str(src.with_suffix(".o"))],
-    ))
+sources = list(Path("src").glob("*.c"))
+objects = [src.with_suffix(".o") for src in sources]
 
-sh(name="link",
-   cmd=f"gcc {' '.join(str(o.outputs[0]) for o in objects)} -o build/app",
-   inputs=objects, outputs=["build/app"])
+with group("compile") as compile_all:
+    for src, obj in zip(sources, objects):
+        sh(
+            name=f"compile-{src.stem}",
+            cmd=f"gcc -c {src} -o {obj}",
+            inputs=[str(src)], outputs=[str(obj)],
+        )
 
-ctx = get_context()
+with group("build") as build:
+    sh(name="link",
+       cmd=f"gcc {' '.join(str(o) for o in objects)} -o build/app",
+       inputs=objects, outputs=["build/app"])
+
 sh(name="test", cmd="pytest",
-   inputs=[ctx.tasks["link"]] + [str(f) for f in sorted(Path("tests").glob("*.py"))])
+   inputs=[build] + [str(f) for f in Path("tests").glob("*.py")])
 ```
 
 ```
-$ cook run "compile-*"      # compile all
-$ cook run "link"            # link (auto-runs compile deps)
+$ cook run compile           # compile all (via group)
+$ cook run link              # link (auto-runs compile deps)
+$ cook run build             # link + compile (via group)
 $ cook run "*"               # everything
 $ cook run --dry-run "*"     # show what would run
-$ cook inspect "link"         # show dependency tree
+$ cook inspect link          # show dependency tree
 ```
 
 ---

@@ -1,9 +1,10 @@
-from collections.abc import Sequence
+from collections.abc import Generator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 from .context import Context, get_context
-from .task import ShellTask, Task
+from .task import GroupTask, ShellTask, Task
 
 
 def sh(
@@ -21,6 +22,12 @@ def sh(
     )
 
 
+@contextmanager
+def group(name: str) -> Generator[GroupTask, None, None]:
+    with get_context().group(name) as g:
+        yield g
+
+
 def create_task(*args: Any, **kwargs: Any) -> None:
     raise NotImplementedError(
         "create_task() was removed in cook-build 0.2. "
@@ -31,4 +38,13 @@ def create_task(*args: Any, **kwargs: Any) -> None:
     )
 
 
-__all__ = ["Context", "ShellTask", "Task", "create_task", "get_context", "sh"]
+__all__ = [
+    "Context",
+    "GroupTask",
+    "ShellTask",
+    "Task",
+    "create_task",
+    "get_context",
+    "group",
+    "sh",
+]

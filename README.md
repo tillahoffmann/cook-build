@@ -7,24 +7,26 @@ A Python-native build system with content-hash-based incremental builds. Define 
 Install cook by running `pip install cook-build` or your favorite Python package manager. Then create a `recipe.py` in your project root:
 
 ```python
-from pathlib import Path
-from cook import sh
+>>> from pathlib import Path
+>>> from cook import sh, group
 
-sources = list(Path("src").glob("*.c"))
-objects = [src.with_suffix(".o") for src in sources]
+>>> sources = list(Path("example").glob("*.c"))
+>>> objects = [src.with_suffix(".o") for src in sources]
 
-for src, obj in zip(sources, objects):
-    sh(
-        name=f"compile-{src.stem}",
-        cmd=f"gcc -c {src} -o {obj}",
-        inputs=[src], outputs=[obj],
-    )
+>>> with group("compile"):
+...     for src, obj in zip(sources, objects):
+...         _ = sh(
+...             name=f"compile-{src.stem}",
+...             cmd=f"gcc -c {src} -o {obj}",
+...             inputs=[src], outputs=[obj],
+...         )
 
-sh(
-    name="link",
-    cmd=f"gcc {' '.join(str(o) for o in objects)} -o build/app",
-    inputs=objects, outputs=["build/app"],
-)
+>>> _ = sh(
+...     name="link",
+...     cmd=f"gcc {' '.join(str(o) for o in objects)} -o build/app",
+...     inputs=objects, outputs=["build/app"],
+... )
+
 ```
 
 Then run:
@@ -43,67 +45,58 @@ On the second run, unchanged tasks are skipped automatically:
 Build finished: 3 fresh in 0.0s
 ```
 
+## Tasks
+
+Use `sh()` to create shell tasks. **inputs** are file paths and/or other tasks — files are hashed for change detection, tasks become dependencies. **outputs** are files the task produces — Cook verifies they exist after execution. Tasks with no outputs always run (useful for tests, linters).
+
+If a file input matches another task's declared output, Cook automatically adds the dependency — no need to pass the task object explicitly:
+
+```python
+>>> _ = sh(name="cc-foo", cmd="gcc -c foo.c -o foo.o", inputs=["foo.c"], outputs=["foo.o"])
+>>> _ = sh(name="link-foo", cmd="gcc foo.o -o app", inputs=["foo.o"], outputs=["app"])
+
+```
+
+Use `group()` to organize related tasks. A group is itself a task, so you can depend on it or run it by name:
+
+```python
+>>> with group("data") as data:
+...     _ = sh(name="gen-a", cmd="generate a", outputs=["a.csv"])
+...     _ = sh(name="gen-b", cmd="generate b", outputs=["b.csv"])
+
+>>> _ = sh(name="train", cmd="python train.py", inputs=[data])
+
+```
+
+```bash
+cook run data       # runs gen-a and gen-b
+cook run train      # runs data group first, then train
+```
+
+All relative paths resolve relative to the recipe file's directory, making recipes portable across machines.
+
 ## CLI
 
 ```bash
-cook run [pattern]               # run tasks matching glob patterncook run -n [pattern]            # show what would run (--dry-run)
+cook run [pattern]               # run tasks matching glob pattern
+cook run -n [pattern]            # show what would run (--dry-run)
 cook run -k [pattern]            # keep going on failure (--keep-going)
 cook run -j4 [pattern]           # run up to 4 tasks in parallel (--jobs)
 cook run -s [pattern]            # stream task output to terminal (--stream)
 cook build <output-pattern>      # run tasks that produce matching outputs
 cook inspect [pattern]           # show dependency graph and staleness
 cook inspect --json [pattern]    # JSON lines output
-cook list [pattern]              # list task namescook list -s [pattern]           # list only stale tasks (--stale)
+cook list [pattern]              # list task names
+cook list -s [pattern]           # list only stale tasks (--stale)
 cook list --json [pattern]       # JSON lines output
 cook invalidate <pattern>        # force tasks to re-run next time
 cook validate <pattern>          # mark tasks as up-to-date without running
+cook ui [pattern]                # interactive DAG visualization
 ```
 
 Patterns use glob syntax (`fnmatch`). Use `-r` for regex. Dependencies of matched tasks are always included.
 
 Global flags: `-v` (verbose), `-q` (quiet), `--color=auto|always|never`, `-f` (recipe file), `-c` (config file), `--version`.
-
-## Defining tasks
-
-Use `sh()` to create shell tasks:
-
-```python
-from cook import sh
-
-obj = sh(
-    name="compile-foo",
-    cmd="gcc -c foo.c -o foo.o",
-    inputs=["foo.c"],
-    outputs=["foo.o"],
-)
-
-# depend on another task by putting it in inputs
-sh(
-    name="link",
-    cmd="gcc foo.o -o app",
-    inputs=[obj, "foo.o"],
-    outputs=["app"],
-)
-```
-
-- **`inputs`** -- file paths and/or other tasks. Files are hashed for change detection; tasks become dependencies.
-- **`outputs`** -- files the task produces. Cook verifies they exist after execution.
-- Tasks with no outputs always run (useful for tests, linters, etc.).
-
-### Implicit dependencies
-
-If a task's file input matches another task's declared output, Cook automatically adds a dependency. This is equivalent to how Make resolves file-based dependencies:
-
-```python
-# No need to pass the compile task object — Cook resolves the dependency
-# automatically because link's input "foo.o" matches compile's output "foo.o".
-sh(name="compile", cmd="gcc -c foo.c -o foo.o", inputs=["foo.c"], outputs=["foo.o"])
-sh(name="link", cmd="gcc foo.o -o app", inputs=["foo.o"], outputs=["app"])
-```
-
-### Path resolution
-
-All relative paths in `inputs` and `outputs` are resolved relative to the recipe file's directory. This means recipes are portable — moving the project directory doesn't force a full rebuild.
 
 ## Custom task types
 
@@ -155,17 +148,10 @@ All settings have sensible defaults. CLI flags override config values.
 Per-task slurm options override defaults:
 
 ```python
-sh(name="train", cmd="python train.py", slurm={"mem": "32G", "gres": "gpu:1"})
+>>> _ = sh(name="gpu-train", cmd="python train.py", slurm={"mem": "32G", "gres": "gpu:1"})
+
 ```
 
 ## How staleness works
 
-Cook computes a content hash for each task based on:
-
-1. The task's own fields (command, name, etc.)
-2. The contents of its input files
-3. The hashes of its dependencies
-
-If the hash matches the last successful run and all outputs exist, the task is skipped. Changed inputs, changed commands, or missing outputs all trigger re-execution.
-
-Tasks with no outputs (tests, linters) always run. If an always-run task is a dependency, all downstream tasks also re-run.
+Cook computes a content hash for each task based on its fields, the contents of its input files, and the hashes of its dependencies. If the hash matches the last successful run and all outputs exist, the task is skipped. Changed inputs, changed commands, or missing outputs trigger re-execution.

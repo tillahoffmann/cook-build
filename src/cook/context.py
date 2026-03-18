@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Generator, Sequence
+from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from pathlib import Path
 from typing import Any, Self
 
-from .task import ShellTask, Task
+from .task import GroupTask, ShellTask, Task
 from .transform import DEFAULT_TRANSFORMS, GraphTransform
 
 _active_context: ContextVar[Context | None] = ContextVar(
@@ -27,6 +28,7 @@ class Context:
         self.project_root: Path = (
             project_root if project_root is not None else Path.cwd()
         )
+        self._group_stack: list[GroupTask] = []
 
     def register(self, task: Task) -> Task:
         if task.name in self._tasks:
@@ -34,6 +36,8 @@ class Context:
                 f"Duplicate task name {task.name!r}. Each task must have a unique name."
             )
         self._tasks[task.name] = task
+        if self._group_stack and task is not self._group_stack[-1]:
+            self._group_stack[-1]._deps.add(task)
         return task
 
     def sh(
@@ -59,6 +63,17 @@ class Context:
         self.register(task)
         return task
 
+    @contextmanager
+    def group(self, name: str) -> Generator[GroupTask, None, None]:
+        marker = self.project_root / ".cook" / "groups" / name
+        task = GroupTask(name=name, outputs=[marker])
+        self.register(task)
+        self._group_stack.append(task)
+        try:
+            yield task
+        finally:
+            self._group_stack.pop()
+
     def resolve(self, path: str | Path) -> Path:
         """Resolve a path relative to the project root."""
         p = Path(path)
@@ -68,7 +83,7 @@ class Context:
 
     @property
     def db_path(self) -> Path:
-        return self.project_root / ".cook.db"
+        return self.project_root / ".cook" / "store.db"
 
     @property
     def tasks(self) -> dict[str, Task]:

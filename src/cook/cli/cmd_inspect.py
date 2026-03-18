@@ -19,6 +19,7 @@ def _task_to_dict(
 ) -> dict[str, object]:
     obj: dict[str, object] = {
         "name": task.name,
+        "type": type(task).__name__,
         "stale": stale,
         "reason": reason,
         "deps": [d.name for d in task.task_deps],

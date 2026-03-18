@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from ..config import ConfigError
-from ..task import ShellTask, Task
+from ..task import GroupTask, ShellTask, Task
 from . import Executor, TaskExecutionError, register_executor
 
 # scontrol job states that indicate the job is still active
@@ -336,3 +336,11 @@ async def _handle_shell_task(executor: Executor, task: Task) -> None:
             returncode=exit_code if exit_code != 0 else 1,
             stderr=f"Slurm job {job_id} {state}\n{stderr}".strip(),
         )
+
+
+@SlurmExecutor.register_handler(task_type=GroupTask)
+async def _handle_group_task(executor: Executor, task: Task) -> None:
+    for out in task.outputs:
+        p = Path(out)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.touch()

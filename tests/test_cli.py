@@ -675,7 +675,7 @@ def test_dry_run_does_not_create_store(
         ctx.sh(name="build", cmd="echo x > {outfile}", outputs=["{outfile}"])
         """,
     )
-    db_path = project / ".cook.db"
+    db_path = project / ".cook/store.db"
     assert not db_path.exists()
     rc = main(["run", "--dry-run", "build"])
     assert rc == 0
@@ -703,7 +703,7 @@ def test_dry_run_does_not_modify_store(
     # Record the store state
     from cook.store.sqlite import SqliteBuildStore
 
-    with SqliteBuildStore(str(project / ".cook.db")) as store:
+    with SqliteBuildStore(str(project / ".cook/store.db")) as store:
         record_before = store.get("build")
     assert record_before is not None
 
@@ -714,7 +714,7 @@ def test_dry_run_does_not_modify_store(
     assert "STALE" in capsys.readouterr().err
 
     # Store record should be unchanged
-    with SqliteBuildStore(str(project / ".cook.db")) as store:
+    with SqliteBuildStore(str(project / ".cook/store.db")) as store:
         record_after = store.get("build")
     assert record_after is not None
     assert record_after.digest == record_before.digest
@@ -1078,7 +1078,7 @@ def test_dry_run_no_record_in_store(
     # Create a store with some other task so .cook.db exists
     from cook.store.sqlite import SqliteBuildStore
 
-    store = SqliteBuildStore(str(project / ".cook.db"))
+    store = SqliteBuildStore(str(project / ".cook/store.db"))
     store.close()
 
     rc = main(["run", "--dry-run", "new-task"])
@@ -1946,3 +1946,272 @@ def test_inspect_json_failed_task(
     assert "history" in obj
     assert "last_failed" in obj["history"]
     assert "error" in obj["history"]
+
+
+# --- group command ---
+
+
+def test_group_run(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    out_a = project / "a.txt"
+    out_b = project / "b.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        with ctx.group("all") as g:
+            ctx.sh(name="a", cmd="echo a > {out_a}", outputs=["{out_a}"])
+            ctx.sh(name="b", cmd="echo b > {out_b}", outputs=["{out_b}"])
+        """,
+    )
+    rc = main(["run", "all"])
+    assert rc == 0
+    assert out_a.exists()
+    assert out_b.exists()
+    err = capsys.readouterr().err
+    assert "a" in err
+    assert "b" in err
+
+
+def test_group_incremental(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    out_a = project / "a.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        with ctx.group("all") as g:
+            ctx.sh(name="a", cmd="echo a > {out_a}", outputs=["{out_a}"])
+        """,
+    )
+    # First run
+    rc = main(["run", "all"])
+    assert rc == 0
+    capsys.readouterr()
+
+    # Second run — should be fresh
+    rc = main(["run", "all"])
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "Fresh" in err
+
+
+def test_group_inspect(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Inspect should show group as up-to-date after a successful run."""
+    out_a = project / "a.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        with ctx.group("grp") as g:
+            ctx.sh(name="a", cmd="echo a > {out_a}", outputs=["{out_a}"])
+        """,
+    )
+    rc = main(["run", "grp"])
+    assert rc == 0
+    capsys.readouterr()
+
+    rc = main(["inspect", "grp"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "up-to-date" in out
+    # Should NOT say "output missing" for the virtual output
+    assert "output missing" not in out
+
+
+def test_group_inspect_stale(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Inspect should show group as stale when never run."""
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        with ctx.group("grp") as g:
+            ctx.sh(name="a", cmd="true", outputs=["a.txt"])
+        """,
+    )
+    rc = main(["inspect", "grp"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "STALE" in out
+    assert "never run" in out
+
+
+def test_group_inspect_json(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """JSON inspect should include group task."""
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        with ctx.group("grp") as g:
+            ctx.sh(name="a", cmd="true", outputs=["a.txt"])
+        """,
+    )
+    rc = main(["inspect", "--json", "grp"])
+    assert rc == 0
+    import json
+
+    lines = capsys.readouterr().out.strip().splitlines()
+    objs = {json.loads(line)["name"]: json.loads(line) for line in lines}
+    assert "grp" in objs
+    assert objs["grp"]["type"] == "GroupTask"
+
+
+def test_group_validate(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Validate should be able to mark a group as up-to-date after running."""
+    out_a = project / "a.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        with ctx.group("grp") as g:
+            ctx.sh(name="a", cmd="echo a > {out_a}", outputs=["{out_a}"])
+        """,
+    )
+    # Run first to create marker and outputs
+    rc = main(["run", "grp"])
+    assert rc == 0
+    capsys.readouterr()
+
+    # Invalidate, then validate
+    rc = main(["invalidate", "grp"])
+    assert rc == 0
+    capsys.readouterr()
+
+    rc = main(["validate", "grp"])
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "grp] validated" in err
+
+
+def test_group_list_stale(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """List --stale should include group when children are stale."""
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        with ctx.group("grp") as g:
+            ctx.sh(name="a", cmd="true", outputs=["a.txt"])
+        """,
+    )
+    rc = main(["list", "--stale"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "grp" in out
+
+
+def test_group_list_current(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """List --current should include group when all children are fresh."""
+    out_a = project / "a.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        with ctx.group("grp") as g:
+            ctx.sh(name="a", cmd="echo a > {out_a}", outputs=["{out_a}"])
+        """,
+    )
+    rc = main(["run", "grp"])
+    assert rc == 0
+    capsys.readouterr()
+
+    rc = main(["list", "--current"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "grp" in out
+
+
+def test_group_dry_run(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Dry run should show group and children."""
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        with ctx.group("grp") as g:
+            ctx.sh(name="a", cmd="true", outputs=["a.txt"])
+        """,
+    )
+    rc = main(["run", "-n", "grp"])
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "grp" in err
+    assert "STALE" in err
+
+
+def test_group_invalidate(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Invalidate on a group should force re-run."""
+    out_a = project / "a.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        with ctx.group("grp") as g:
+            ctx.sh(name="a", cmd="echo a > {out_a}", outputs=["{out_a}"])
+        """,
+    )
+    rc = main(["run", "grp"])
+    assert rc == 0
+    capsys.readouterr()
+
+    rc = main(["invalidate", "grp"])
+    assert rc == 0
+    capsys.readouterr()
+
+    # Should re-run after invalidation
+    rc = main(["run", "grp"])
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "Cooked" in err
+
+
+def test_group_empty(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Empty group should run successfully."""
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        with ctx.group("empty") as g:
+            pass
+        """,
+    )
+    rc = main(["run", "empty"])
+    assert rc == 0
+
+
+def test_group_child_change_propagates(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """When a child's input changes, the group and its dependents should re-run."""
+    infile = project / "src.txt"
+    infile.write_text("original")
+    out_a = project / "a.txt"
+    out_b = project / "b.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        with ctx.group("grp") as g:
+            ctx.sh(name="a", cmd="cat {infile} > {out_a}", inputs=["{infile}"], outputs=["{out_a}"])
+        ctx.sh(name="downstream", cmd="cat {out_a} > {out_b}", inputs=[g], outputs=["{out_b}"])
+        """,
+    )
+    rc = main(["run", "downstream"])
+    assert rc == 0
+    capsys.readouterr()
+
+    # Modify input
+    infile.write_text("changed")
+    rc = main(["run", "downstream"])
+    assert rc == 0
+    err = capsys.readouterr().err
+    # Both should re-run
+    assert "Cooked" in err

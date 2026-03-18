@@ -88,3 +88,10 @@ class ShellTask(Task):
             raise ValueError(
                 f"ShellTask {self.name!r}: cmd must not be empty or whitespace-only."
             )
+
+
+@dataclass(eq=False)
+class GroupTask(Task):
+    """A task that groups other tasks. Creates a marker file as output."""
+
+    pass

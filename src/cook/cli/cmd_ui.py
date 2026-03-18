@@ -109,8 +109,9 @@ def _find_free_port() -> int:
     """Try the default port, fall back to a random one."""
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s.bind(("127.0.0.1", DEFAULT_PORT))
-            return DEFAULT_PORT  # pragma: no cover
+            return DEFAULT_PORT
     except OSError:
         pass
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
