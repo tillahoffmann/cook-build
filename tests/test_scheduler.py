@@ -470,8 +470,10 @@ async def test_dep_with_outputs_but_no_record(
     assert "no-out-root" in captured
     assert "mid-with-out" in captured
     assert "end-with-out" in captured
-    # No record stored for B (None effective digest)
-    assert store.get("mid-with-out") is None
+    # B has a run record but no digest (None effective digest)
+    record = store.get("mid-with-out")
+    assert record is not None
+    assert record.digest is None
 
 
 async def test_dependency_failed_error_attributes(
@@ -850,3 +852,86 @@ async def test_scheduler_resolves_relative_output(
     sched = Scheduler(store, executor, project_root=tmp_path)
     await sched.run([task])
     assert (tmp_path / "rel_out.txt").exists()
+
+
+async def test_cleanup_session_on_scheduler_exit(
+    tmp_path: Path, store: SqliteBuildStore, executor: LocalExecutor
+) -> None:
+    """Scheduler.run() cleans up pending/running runs on exit."""
+    outfile = tmp_path / "out.txt"
+    task = ShellTask(name="t", cmd=f"echo ok > {outfile}", outputs=[str(outfile)])
+    sched = Scheduler(store, executor, project_root=tmp_path)
+    await sched.run([task])
+
+    # After normal completion, no pending or running records should remain
+    assert store.get_running("t") is None
+    record = store.get("t")
+    assert record is not None
+    assert record.digest is not None
+
+
+async def test_cleanup_marks_running_as_interrupted(
+    tmp_path: Path, store: SqliteBuildStore, executor: LocalExecutor
+) -> None:
+    """Running tasks are marked as interrupted on cleanup."""
+    from datetime import datetime, timezone
+
+    # Simulate: a task started running but the session was interrupted
+    session_id = "test-session"
+    run_id = store.start_run("t", session_id, 1, datetime.now(timezone.utc))
+    store.update_run_status(run_id, "running")
+
+    store.cleanup_session(session_id)
+
+    assert store.get_running("t") is None
+    record = store.get("t")
+    assert record is not None
+    assert record.error == "interrupted"
+    assert record.last_failed is not None
+
+
+async def test_cleanup_deletes_pending(
+    tmp_path: Path, store: SqliteBuildStore, executor: LocalExecutor
+) -> None:
+    """Pending tasks are deleted (not marked as failed) on cleanup."""
+    from datetime import datetime, timezone
+
+    session_id = "test-session"
+    store.start_run("t", session_id, 1, datetime.now(timezone.utc))
+    # Status is 'pending' — never transitioned to running
+
+    store.cleanup_session(session_id)
+
+    assert store.get_running("t") is None
+    assert store.get("t") is None  # completely gone
+
+
+async def test_fresh_task_no_pending_residue(
+    tmp_path: Path, store: SqliteBuildStore, executor: LocalExecutor
+) -> None:
+    """Fresh (up-to-date) tasks should not leave pending run records."""
+    outfile = tmp_path / "out.txt"
+    task = ShellTask(name="t", cmd=f"echo ok > {outfile}", outputs=[str(outfile)])
+    sched = Scheduler(store, executor, project_root=tmp_path)
+
+    # First run — executes
+    await sched.run([task])
+    assert outfile.exists()
+
+    # Count runs
+    row = store._conn.execute(
+        "SELECT COUNT(*) FROM runs WHERE task_id = 't'"
+    ).fetchone()
+    runs_after_first = row[0]
+
+    # Second run — should be fresh, no new run record
+    sched2 = Scheduler(store, executor, project_root=tmp_path)
+    await sched2.run([task])
+
+    row = store._conn.execute(
+        "SELECT COUNT(*) FROM runs WHERE task_id = 't'"
+    ).fetchone()
+    runs_after_second = row[0]
+
+    # Fresh task should not add a new run
+    assert runs_after_second == runs_after_first

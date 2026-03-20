@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .executor import Executor, TaskExecutionError
-from .store import BuildStore, FileDigestCache, TaskRecord
+from .store import BuildStore, FileDigestCache
 from .task import ShellTask, Task
 from .transform import collect_transitive
 from .ui import Output, Verbosity
@@ -235,6 +237,8 @@ class Scheduler:
         self._keep_going = keep_going
         self._ui = ui or Output(verbosity=Verbosity.NORMAL)
         self._project_root = (project_root or Path.cwd()).resolve()
+        self._session_id = uuid.uuid4().hex
+        self._pid = os.getpid()
         self._futures: dict[str, asyncio.Future[None]] = {}
         self._failed: set[str] = set()
         self._errors: list[Exception] = []
@@ -260,15 +264,19 @@ class Scheduler:
 
         build_start = time.monotonic()
 
-        # Always use return_exceptions=True to avoid gather cancelling
-        # in-flight subprocess tasks (which can deadlock asyncio.run shutdown).
-        results = await asyncio.gather(
-            *(self._ensure(t) for t in targets), return_exceptions=True
-        )
-        for r in results:
-            if isinstance(r, Exception):
-                if not any(r is e for e in self._errors):
-                    self._errors.append(r)
+        try:
+            # Always use return_exceptions=True to avoid gather cancelling
+            # in-flight subprocess tasks (which can deadlock asyncio.run shutdown).
+            results = await asyncio.gather(
+                *(self._ensure(t) for t in targets), return_exceptions=True
+            )
+            for r in results:
+                if isinstance(r, Exception):
+                    if not any(r is e for e in self._errors):
+                        self._errors.append(r)
+        finally:
+            # Clean up any still-running records for this session
+            self._store.cleanup_session(self._session_id)
 
         build_elapsed = time.monotonic() - build_start
         self._ui.summary(
@@ -304,6 +312,12 @@ class Scheduler:
             raise
 
     async def _run_task(self, task: Task) -> None:
+        # 0. Mark as pending (waiting for deps)
+        pending_at = datetime.now(timezone.utc)
+        run_id = self._store.start_run(
+            task.task_id, self._session_id, self._pid, pending_at
+        )
+
         # 1. Ensure all dependencies (always return_exceptions to avoid
         #    cancelling in-flight subprocesses)
         deps = task.task_deps
@@ -322,6 +336,12 @@ class Scheduler:
 
         # 2. Check for failed dependencies
         if dep_failed:
+            self._store.finish_run(
+                run_id,
+                "failed",
+                datetime.now(timezone.utc),
+                error="dependency failed",
+            )
             if self._keep_going:
                 failed_dep = next(d for d in deps if d.task_id in self._failed)
                 self._failed.add(task.task_id)
@@ -342,14 +362,22 @@ class Scheduler:
                 if all(self._resolve(o).exists() for o in task.outputs):
                     self._fresh += 1
                     self._ui.task_fresh(task.name)
+                    # Task is fresh — discard the pending run
+                    self._store.delete_run(run_id)
                     return
 
-        # 5. Execute
+        # 5. Execute (transition to running happens when semaphore is acquired)
         if isinstance(task, ShellTask):
             self._ui.verbose(f"  $ {task.cmd}")
         started_at = datetime.now(timezone.utc)
+
+        def on_start() -> None:
+            nonlocal started_at
+            started_at = datetime.now(timezone.utc)
+            self._store.update_run_status(run_id, "running")
+
         try:
-            await self._executor.execute(task)
+            await self._executor.execute(task, on_start=on_start)
         except Exception as exc:
             failed_at = datetime.now(timezone.utc)
             elapsed = (failed_at - started_at).total_seconds()
@@ -357,15 +385,7 @@ class Scheduler:
 
             self._ui.task_failed(task.name, elapsed, str(exc))
             self._failed.add(task.task_id)
-            self._store.save(
-                TaskRecord(
-                    task_id=task.task_id,
-                    digest=effective,
-                    last_started=started_at,
-                    last_failed=failed_at,
-                    error=str(exc),
-                )
-            )
+            self._store.finish_run(run_id, "failed", failed_at, error=str(exc))
             raise
 
         finished_at = datetime.now(timezone.utc)
@@ -381,30 +401,14 @@ class Scheduler:
                 self._task_failures += 1
                 self._ui.task_failed(task.name, elapsed, str(err))
                 self._failed.add(task.task_id)
-                self._store.save(
-                    TaskRecord(
-                        task_id=task.task_id,
-                        digest=effective,
-                        last_started=started_at,
-                        last_failed=finished_at,
-                        error=str(err),
-                    )
-                )
+                self._store.finish_run(run_id, "failed", finished_at, error=str(err))
                 raise err
 
         self._cooked += 1
         self._ui.task_cooked(task.name, elapsed)
 
         # 7. Store record
-        if effective is not None:
-            self._store.save(
-                TaskRecord(
-                    task_id=task.task_id,
-                    digest=effective,
-                    last_started=started_at,
-                    last_succeeded=finished_at,
-                )
-            )
+        self._store.finish_run(run_id, "succeeded", finished_at, digest=effective)
 
     def _resolve(self, path: str | Path) -> Path:
         p = Path(path)

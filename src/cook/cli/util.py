@@ -158,7 +158,15 @@ def run_targets(
             stream=stream,
             project_root=ctx.project_root,
         )
-        asyncio.run(scheduler.run(targets))
+        try:
+            asyncio.run(scheduler.run(targets))
+        except KeyboardInterrupt:  # pragma: no cover
+            store.cleanup_session(scheduler._session_id)
+            ui.status("\nInterrupted.")
+            raise
+        except SystemExit:  # pragma: no cover
+            store.cleanup_session(scheduler._session_id)
+            raise
 
     return 0
 

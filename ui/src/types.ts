@@ -3,6 +3,8 @@ export interface TaskSummary {
   type: string
   stale: boolean
   failed?: boolean
+  running?: boolean
+  pending?: boolean
   reason: string | null
   deps: string[]
   inputs: string[]

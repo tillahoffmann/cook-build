@@ -90,8 +90,15 @@ def _build_graph_data(
                 reason = staleness_reason(task, store, cache, ctx.project_root)
                 record = store.get(task.task_id)
                 api_dict = _task_to_api_dict(task, stale, reason, ctx)
+                # Check if task is pending or running
+                active_run = store.get_running(task.task_id)
+                if active_run and active_run.is_alive:
+                    if active_run.status == "pending":
+                        api_dict["pending"] = True
+                    else:
+                        api_dict["running"] = True
                 # Mark as failed if last run failed
-                if record and record.last_failed:
+                elif record and record.last_failed:
                     if (
                         not record.last_succeeded
                         or record.last_failed > record.last_succeeded
@@ -129,11 +136,11 @@ def _find_free_port() -> int:
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s.bind(("127.0.0.1", DEFAULT_PORT))
             return DEFAULT_PORT  # pragma: no cover
-    except OSError:
-        pass
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("", 0))
-        return s.getsockname()[1]
+    except OSError:  # pragma: no cover
+        pass  # pragma: no cover
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:  # pragma: no cover
+        s.bind(("", 0))  # pragma: no cover
+        return s.getsockname()[1]  # pragma: no cover
 
 
 class _UIHandler(SimpleHTTPRequestHandler):
@@ -143,7 +150,7 @@ class _UIHandler(SimpleHTTPRequestHandler):
     config_data: dict[str, object]
     static_dir: Path | None
     _cache: dict[str, object] = {}
-    _cache_mtime: float = -1
+    _cache_tag: object = None  # sentinel for cache invalidation
 
     def _get_graph_data(
         self,
@@ -153,20 +160,15 @@ class _UIHandler(SimpleHTTPRequestHandler):
         dict[str, tuple[bool, str | None, TaskRecord | None]],
     ]:
         """Return cached graph data, recomputing when the store changes."""
-        db_path = self.ctx.db_path
-        try:
-            mtime = db_path.stat().st_mtime
-        except FileNotFoundError:
-            mtime = 0
-
-        if mtime != _UIHandler._cache_mtime:
+        tag = self._db_tag()
+        if tag != _UIHandler._cache_tag:
             tasks_api, edges, detail_cache = _build_graph_data(self.ctx)
             _UIHandler._cache = {
                 "tasks": tasks_api,
                 "edges": edges,
                 "detail": detail_cache,
             }
-            _UIHandler._cache_mtime = mtime
+            _UIHandler._cache_tag = tag
 
         return (
             _UIHandler._cache["tasks"],  # type: ignore[return-value]
@@ -174,11 +176,23 @@ class _UIHandler(SimpleHTTPRequestHandler):
             _UIHandler._cache["detail"],  # type: ignore[return-value]
         )
 
-    def _db_mtime(self) -> float:
-        try:
-            return self.ctx.db_path.stat().st_mtime
-        except FileNotFoundError:
-            return 0
+    def _db_tag(self) -> tuple[bool, float]:
+        """Return (exists, mtime) for cache invalidation.
+
+        Checks both the main db and WAL file — WAL mode writes to
+        the -wal file and the main db mtime only changes on checkpoint.
+        """
+        mtime = 0.0
+        exists = False
+        for p in [self.ctx.db_path, Path(str(self.ctx.db_path) + "-wal")]:
+            try:
+                t = p.stat().st_mtime
+                exists = True
+                if t > mtime:
+                    mtime = t
+            except FileNotFoundError:
+                pass
+        return (exists, mtime)
 
     def _is_not_modified(self, mtime: float) -> bool:
         """Check if the client's cache is current based on If-Modified-Since."""
@@ -186,15 +200,16 @@ class _UIHandler(SimpleHTTPRequestHandler):
         if ims:
             try:
                 client_time = email.utils.parsedate_to_datetime(ims).timestamp()
-                return mtime <= client_time
+                # HTTP dates have 1-second precision, so truncate mtime
+                return int(mtime) <= int(client_time)
             except (ValueError, TypeError):  # pragma: no cover
                 pass
         return False
 
     def _handle_api_data(self, path: str) -> None:
         """Handle /api/tasks or /api/edges with conditional caching."""
-        mtime = self._db_mtime()
-        if self._is_not_modified(mtime):
+        exists, mtime = self._db_tag()
+        if exists and self._is_not_modified(mtime):
             self.send_response(304)
             self.end_headers()
             return
@@ -240,9 +255,17 @@ class _UIHandler(SimpleHTTPRequestHandler):
         if task is None:
             self._json_response({"error": f"Task {name!r} not found"}, 404)
             return
-        _, _, detail_cache = self._get_graph_data()
+        tasks, _, detail_cache = self._get_graph_data()
         stale, reason, record = detail_cache[name]
-        self._json_response(_task_detail_dict(task, stale, reason, record, self.ctx))
+        detail = _task_detail_dict(task, stale, reason, record, self.ctx)
+        # Propagate running/pending/failed status from the cached task list
+        task_api = next((t for t in tasks if t["name"] == name), None)
+        if task_api:
+            if task_api.get("running"):
+                detail["running"] = True
+            elif task_api.get("pending"):
+                detail["pending"] = True
+        self._json_response(detail)
 
     def _serve_static(self) -> None:
         assert self.static_dir is not None

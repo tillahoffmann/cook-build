@@ -13,6 +13,7 @@ import pytest
 from cook.cli import main
 from cook.cli.cmd_ui import _build_graph_data, _find_free_port, _UIHandler
 from cook.context import Context
+from cook.store.sqlite import SqliteBuildStore
 from cook.task import ShellTask
 
 
@@ -53,7 +54,7 @@ def ui_server() -> Generator[
         s.shutdown()
     # Reset class-level cache to prevent cross-test contamination
     _UIHandler._cache = {}
-    _UIHandler._cache_mtime = -1
+    _UIHandler._cache_tag = None
 
 
 @pytest.fixture
@@ -137,6 +138,132 @@ def test_build_graph_data_marks_failed(project: Path) -> None:
     assert task_dict["fail"].get("failed") is True
 
 
+def test_build_graph_data_marks_pending(project: Path) -> None:
+    import os
+    from datetime import datetime, timezone
+
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="slow", cmd="sleep 10", outputs=["out.txt"])
+        """,
+    )
+
+    with Context(project_root=project) as ctx:
+        ctx.sh(name="slow", cmd="sleep 10", outputs=["out.txt"])
+        ctx.validate()
+
+        with SqliteBuildStore(str(ctx.db_path)) as store:
+            store.start_run(
+                "slow", "test-session", os.getpid(), datetime.now(timezone.utc)
+            )
+
+        tasks, _, _ = _build_graph_data(ctx)
+
+    task_dict = {t["name"]: t for t in tasks}
+    assert task_dict["slow"].get("pending") is True
+
+
+def test_build_graph_data_marks_running(project: Path) -> None:
+    import os
+    from datetime import datetime, timezone
+
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="slow", cmd="sleep 10", outputs=["out.txt"])
+        """,
+    )
+
+    with Context(project_root=project) as ctx:
+        ctx.sh(name="slow", cmd="sleep 10", outputs=["out.txt"])
+        ctx.validate()
+
+        with SqliteBuildStore(str(ctx.db_path)) as store:
+            run_id = store.start_run(
+                "slow", "test-session", os.getpid(), datetime.now(timezone.utc)
+            )
+            store.update_run_status(run_id, "running")
+
+        tasks, _, _ = _build_graph_data(ctx)
+
+    task_dict = {t["name"]: t for t in tasks}
+    assert task_dict["slow"].get("running") is True
+
+
+def test_task_detail_shows_pending(project: Path, ui_server) -> None:  # type: ignore[no-untyped-def]
+    import os
+    from datetime import datetime, timezone
+
+    from cook.cli.util import load_recipe
+
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="slow", cmd="sleep 10", outputs=["out.txt"])
+        """,
+    )
+
+    with Context(project_root=project) as ctx:
+        load_recipe(str(project / "recipe.py"))
+        ctx.validate()
+
+        with SqliteBuildStore(str(ctx.db_path)) as store:
+            store.start_run(
+                "slow", "test-session", os.getpid(), datetime.now(timezone.utc)
+            )
+
+        _, _, conn = ui_server(ctx)
+        conn.request("GET", "/api/tasks/slow")
+        resp = conn.getresponse()
+        assert resp.status == 200
+        import json
+
+        detail = json.loads(resp.read())
+        assert detail.get("pending") is True
+
+
+def test_task_detail_shows_running(project: Path, ui_server) -> None:  # type: ignore[no-untyped-def]
+    import os
+    from datetime import datetime, timezone
+
+    from cook.cli.util import load_recipe
+
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="slow", cmd="sleep 10", outputs=["out.txt"])
+        """,
+    )
+
+    with Context(project_root=project) as ctx:
+        load_recipe(str(project / "recipe.py"))
+        ctx.validate()
+
+        with SqliteBuildStore(str(ctx.db_path)) as store:
+            run_id = store.start_run(
+                "slow", "test-session", os.getpid(), datetime.now(timezone.utc)
+            )
+            store.update_run_status(run_id, "running")
+
+        _, _, conn = ui_server(ctx)
+        conn.request("GET", "/api/tasks/slow")
+        resp = conn.getresponse()
+        assert resp.status == 200
+        import json
+
+        detail = json.loads(resp.read())
+        assert detail.get("running") is True
+
+
 def test_task_detail_includes_history(project: Path) -> None:
     _write_recipe(
         project,
@@ -215,16 +342,77 @@ def test_find_free_port_fallback() -> None:
         blocker.close()
 
 
-def test_api_tasks_endpoint(project: Path, ui_server) -> None:  # type: ignore[no-untyped-def]
+def test_api_refreshes_when_db_deleted(
+    project: Path,
+    ui_server,  # type: ignore[no-untyped-def]
+) -> None:
+    """Deleting the .cook directory should cause the API to return fresh data."""
+    import shutil
+
+    outfile = project / "out.txt"
     _write_recipe(
         project,
-        """\
+        f"""\
         from cook import get_context
         ctx = get_context()
-        ctx.sh(name="hello", cmd="echo hi", outputs=["out.txt"])
+        ctx.sh(name="t", cmd="echo hi > {outfile}", outputs=["{outfile}"])
         """,
     )
     from cook.cli.util import load_recipe
+
+    with Context(project_root=project) as ctx:
+        load_recipe(str(project / "recipe.py"))
+        ctx.validate()
+
+        # Run the task to create a store with a record
+        from cook.cli import main
+
+        rc = main(["run", "t"])
+        assert rc == 0
+
+        _, _, conn = ui_server(ctx)
+
+        # First request — should have task with history
+        conn.request("GET", "/api/tasks")
+        resp = conn.getresponse()
+        assert resp.status == 200
+        last_modified = resp.getheader("Last-Modified")
+        assert last_modified is not None
+        tasks_before = json.loads(resp.read())
+        assert len(tasks_before) == 1
+        assert tasks_before[0]["stale"] is False  # just ran, should be fresh
+
+        # Delete the .cook directory
+        cook_dir = project / ".cook"
+        if cook_dir.exists():
+            shutil.rmtree(cook_dir)
+
+        # Second request WITH If-Modified-Since — must NOT return 304
+        # (the db was deleted, so data has changed even though mtime is "older")
+        conn.request("GET", "/api/tasks", headers={"If-Modified-Since": last_modified})
+        resp = conn.getresponse()
+        assert resp.status == 200  # NOT 304
+        tasks_after = json.loads(resp.read())
+        assert len(tasks_after) == 1
+        assert tasks_after[0]["stale"] is True  # no store = stale
+        assert tasks_after[0]["reason"] == "never run"
+
+
+def test_api_tasks_endpoint(project: Path, ui_server) -> None:  # type: ignore[no-untyped-def]
+    outfile = project / "out.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="hello", cmd="echo hi > {outfile}", outputs=["{outfile}"])
+        """,
+    )
+    # Run to create the db (needed for 304 tests)
+    from cook.cli import main
+    from cook.cli.util import load_recipe
+
+    main(["run", "hello"])
 
     with Context(project_root=project) as ctx:
         load_recipe(str(project / "recipe.py"))

@@ -57,6 +57,8 @@
   /* Status — Apple system colors (dark) */
   --color-fresh: #30d158;
   --color-stale: #ffd600;
+  --color-pending: #5e5ce6;
+  --color-running: #0091ff;
   --color-failed: #ff4245;
   --color-never-run: #8e8e93;
   --color-always-run: #ff9230;
@@ -99,6 +101,8 @@
 
   --color-fresh: #34c759;
   --color-stale: #a16a00;
+  --color-pending: #564ade;
+  --color-running: #0088ff;
   --color-failed: #ff383c;
   --color-never-run: #8e8e93;
   --color-always-run: #ff8d28;
@@ -110,6 +114,11 @@
   --color-output: #008932;
   --color-deps: #c55300;
   --color-dependents: #b02fc2;
+}
+
+@keyframes breathe {
+  0%, 100% { background: var(--color-surface-raised); }
+  50% { background: color-mix(in srgb, var(--color-running) 8%, var(--color-surface-raised)); }
 }
 
 @layer base {

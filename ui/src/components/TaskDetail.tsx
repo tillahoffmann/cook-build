@@ -45,8 +45,9 @@ export function TaskDetail({ taskName, edges, onNavigate, onFocus, onHighlight, 
 
   const dependents = edges.filter((e) => e.from === taskName).map((e) => e.to)
   const isFailed = detail.history?.last_failed && (!detail.history?.last_succeeded || detail.history.last_failed > detail.history.last_succeeded)
+  const isInterrupted = isFailed && detail.history?.error === 'interrupted'
   const statusColor = isFailed ? 'var(--color-failed)' : detail.stale ? 'var(--color-stale)' : 'var(--color-fresh)'
-  const statusText = isFailed ? 'Failed' : detail.stale ? 'Stale' : 'Up to date'
+  const statusText = isInterrupted ? 'Interrupted' : isFailed ? 'Failed' : detail.stale ? 'Stale' : 'Up to date'
 
   return (
     <div className="h-full overflow-y-auto p-4 space-y-3 text-[13px]">
@@ -171,7 +172,9 @@ export function TaskDetail({ taskName, edges, onNavigate, onFocus, onHighlight, 
           {detail.history?.last_failed && (
             <tr className="align-top">
               <td className="text-[var(--muted-foreground)] pr-3 py-[3px] whitespace-nowrap font-normal">
-                <span className="inline-flex items-center gap-1"><XCircle size={11} /> failed</span>
+                <span className="inline-flex items-center gap-1">
+                  <XCircle size={11} /> {detail.history.error === 'interrupted' ? 'interrupted' : 'failed'}
+                </span>
               </td>
               <td className="py-[3px]">{new Date(detail.history.last_failed).toLocaleString()}</td>
             </tr>
@@ -195,8 +198,8 @@ export function TaskDetail({ taskName, edges, onNavigate, onFocus, onHighlight, 
         </tbody>
       </table>
 
-      {/* Error */}
-      {detail.history?.error && (
+      {/* Error (skip for "interrupted" — already shown in the history label) */}
+      {detail.history?.error && detail.history.error !== 'interrupted' && (
         <pre className="text-[12px] bg-[var(--background)] px-3 py-2 rounded-[10px] text-[var(--color-failed)] whitespace-pre-wrap leading-relaxed font-mono">
           {detail.history.error}
         </pre>

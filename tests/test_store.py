@@ -21,43 +21,59 @@ def test_get_unknown_returns_none(store: SqliteBuildStore) -> None:
 
 
 def test_save_and_get_roundtrip(store: SqliteBuildStore) -> None:
-    now = datetime.now(timezone.utc)
-    record = TaskRecord(
-        task_id="task-1",
-        digest="abc123",
-        last_started=now,
-        last_succeeded=now,
-        last_failed=None,
-        error=None,
-    )
-    store.save(record)
+    store.save(TaskRecord(task_id="task-1", digest="abc123"))
     got = store.get("task-1")
     assert got is not None
     assert got.task_id == "task-1"
     assert got.digest == "abc123"
-    assert got.last_started == now
-    assert got.last_succeeded == now
-    assert got.last_failed is None
-    assert got.duration == 0.0
-    assert got.error is None
 
 
-def test_save_all_fields(store: SqliteBuildStore) -> None:
-    now = datetime.now(timezone.utc)
-    record = TaskRecord(
-        task_id="full",
-        digest="d1g3st",
-        last_started=now,
-        last_succeeded=now,
-        last_failed=now,
-        error="something broke",
-    )
-    store.save(record)
-    got = store.get("full")
+def test_start_and_finish_run_succeeded(store: SqliteBuildStore) -> None:
+    started = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    finished = datetime(2025, 1, 1, 12, 0, 5, tzinfo=timezone.utc)
+    run_id = store.start_run("t", "session-1", 1234, started)
+    assert run_id > 0
+
+    store.finish_run(run_id, "succeeded", finished, digest="abc")
+    got = store.get("t")
     assert got is not None
-    assert got.last_failed == now
-    assert got.duration == 0.0
-    assert got.error == "something broke"
+    assert got.digest == "abc"
+    assert got.last_started == started
+    assert got.last_succeeded == finished
+    assert got.last_failed is None
+    assert got.duration == 5.0
+
+
+def test_start_and_finish_run_failed(store: SqliteBuildStore) -> None:
+    started = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    finished = datetime(2025, 1, 1, 12, 0, 3, tzinfo=timezone.utc)
+    run_id = store.start_run("t", "session-1", 1234, started)
+    store.finish_run(run_id, "failed", finished, error="boom")
+
+    got = store.get("t")
+    assert got is not None
+    assert got.last_failed == finished
+    assert got.error == "boom"
+
+
+def test_get_preserves_history_across_runs(store: SqliteBuildStore) -> None:
+    """A success after a failure should preserve last_failed."""
+    t1 = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    t2 = datetime(2025, 1, 1, 13, 0, 0, tzinfo=timezone.utc)
+
+    # First run: failure
+    r1 = store.start_run("t", "s1", 1, t1)
+    store.finish_run(r1, "failed", t1, error="boom")
+
+    # Second run: success
+    r2 = store.start_run("t", "s2", 1, t2)
+    store.finish_run(r2, "succeeded", t2, digest="d2")
+
+    got = store.get("t")
+    assert got is not None
+    assert got.digest == "d2"
+    assert got.last_succeeded == t2
+    assert got.last_failed == t1  # preserved from earlier run
 
 
 def test_save_upserts(store: SqliteBuildStore) -> None:
@@ -89,17 +105,8 @@ def test_context_manager(tmp_path: Path) -> None:
     with SqliteBuildStore(tmp_path / "test.db") as store:
         store.save(TaskRecord(task_id="cm", digest="d"))
         assert store.get("cm") is not None
-    # after exiting, store is closed
     with pytest.raises(Exception):
         store.get("cm")
-
-
-def test_datetime_roundtrip(store: SqliteBuildStore) -> None:
-    dt = datetime(2025, 6, 15, 12, 30, 45, tzinfo=timezone.utc)
-    store.save(TaskRecord(task_id="dt", digest="x", last_started=dt))
-    got = store.get("dt")
-    assert got is not None
-    assert got.last_started == dt
 
 
 def test_wal_mode(store: SqliteBuildStore) -> None:
@@ -108,37 +115,64 @@ def test_wal_mode(store: SqliteBuildStore) -> None:
     assert row[0] == "wal"
 
 
-def test_save_preserves_timing_fields_with_coalesce(store: SqliteBuildStore) -> None:
-    """Saving a success record after a failure should not erase last_failed."""
-    failed_at = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
-    store.save(
-        TaskRecord(
-            task_id="t",
-            digest="d1",
-            last_started=failed_at,
-            last_failed=failed_at,
-            error="boom",
-        )
-    )
+def test_get_running(store: SqliteBuildStore) -> None:
+    import os
 
-    succeeded_at = datetime(2025, 1, 1, 13, 0, 0, tzinfo=timezone.utc)
-    store.save(
-        TaskRecord(
-            task_id="t",
-            digest="d2",
-            last_started=succeeded_at,
-            last_succeeded=succeeded_at,
-            last_failed=None,
-        )
-    )
+    now = datetime.now(timezone.utc)
+    run_id = store.start_run("t", "s1", os.getpid(), now)
+    running = store.get_running("t")
+    assert running is not None
+    assert running.id == run_id
+    assert running.status == "pending"
+    assert running.is_alive  # our own PID
 
-    got = store.get("t")
-    assert got is not None
-    assert got.digest == "d2"
-    assert got.last_started == succeeded_at
-    assert got.last_succeeded == succeeded_at
-    # last_failed should be preserved from the earlier save, not overwritten with None
-    assert got.last_failed == failed_at
+    store.finish_run(run_id, "succeeded", now, digest="d")
+    assert store.get_running("t") is None
+
+
+def test_get_running_dead_pid(store: SqliteBuildStore) -> None:
+    now = datetime.now(timezone.utc)
+    store.start_run("t", "s1", 999999, now)  # unlikely to be alive
+    running = store.get_running("t")
+    assert running is not None
+    assert not running.is_alive
+
+
+def test_cleanup_session(store: SqliteBuildStore) -> None:
+    now = datetime.now(timezone.utc)
+    # a is pending (never started)
+    store.start_run("a", "session-x", 1, now)
+    # b is running (started executing)
+    b_id = store.start_run("b", "session-x", 1, now)
+    store.update_run_status(b_id, "running")
+    # c is in a different session
+    store.start_run("c", "session-y", 1, now)
+
+    store.cleanup_session("session-x")
+
+    # a was pending — should be deleted entirely (not failed)
+    assert store.get_running("a") is None
+    assert store.get("a") is None  # no record at all
+    # b was running — should be marked as failed
+    assert store.get_running("b") is None
+    record_b = store.get("b")
+    assert record_b is not None
+    assert record_b.error == "interrupted"
+    # c should still be pending (different session)
+    assert store.get_running("c") is not None
+
+
+def test_check_constraint(store: SqliteBuildStore) -> None:
+    import sqlite3
+
+    with pytest.raises(sqlite3.IntegrityError):
+        store._conn.execute(
+            "INSERT INTO runs (task_id, session_id, pid, status, started_at) "
+            "VALUES ('t', 's', 1, 'invalid', '2025-01-01T00:00:00')"
+        )
+
+
+# --- TaskRecord duration tests ---
 
 
 def test_duration_derived_from_timestamps() -> None:
@@ -154,7 +188,6 @@ def test_duration_derived_from_timestamps() -> None:
 
 
 def test_duration_uses_most_recent_end() -> None:
-    """When both last_succeeded and last_failed exist, use the most recent."""
     start = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
     old_success = datetime(2025, 1, 1, 12, 0, 3, tzinfo=timezone.utc)
     new_failure = datetime(2025, 1, 1, 12, 0, 7, tzinfo=timezone.utc)
@@ -165,12 +198,10 @@ def test_duration_uses_most_recent_end() -> None:
         last_succeeded=old_success,
         last_failed=new_failure,
     )
-    # Should use the more recent failure, not the stale success
     assert record.duration == 7.0
 
 
 def test_duration_none_when_end_before_start() -> None:
-    """Stale succeeded/failed from a previous run should return None."""
     start = datetime(2025, 1, 1, 12, 0, 10, tzinfo=timezone.utc)
     old_success = datetime(2025, 1, 1, 12, 0, 3, tzinfo=timezone.utc)
     record = TaskRecord(
@@ -208,7 +239,7 @@ def test_file_cache_returns_consistent_hash(tmp_path: Path) -> None:
     h2 = cache.hash_file(f)
     assert h1 == h2
     assert isinstance(h1, bytes)
-    assert len(h1) == 32  # SHA-256 digest length
+    assert len(h1) == 32
 
 
 def test_file_cache_detects_content_change(tmp_path: Path) -> None:
@@ -216,7 +247,6 @@ def test_file_cache_detects_content_change(tmp_path: Path) -> None:
     f.write_text("v1")
     cache = FileDigestCache()
     h1 = cache.hash_file(f)
-    # Ensure mtime changes (some filesystems have 1s resolution)
     import time
 
     time.sleep(0.05)
@@ -226,18 +256,16 @@ def test_file_cache_detects_content_change(tmp_path: Path) -> None:
 
 
 def test_file_cache_uses_mtime(tmp_path: Path) -> None:
-    """Same mtime means the cache returns without re-reading."""
     f = tmp_path / "a.txt"
     f.write_text("data")
     cache = FileDigestCache()
     h1 = cache.hash_file(f)
-    # Write same content — mtime changes, but hash should be same value
     import time
 
     time.sleep(0.05)
     f.write_text("data")
     h2 = cache.hash_file(f)
-    assert h1 == h2  # same content, same hash
+    assert h1 == h2
 
 
 def test_file_cache_missing_file(tmp_path: Path) -> None:

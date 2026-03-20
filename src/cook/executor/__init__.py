@@ -93,9 +93,13 @@ class Executor(ABC):
         to check executor-specific extra keys.
         """
 
-    async def execute(self, task: Task) -> None:
+    async def execute(
+        self, task: Task, on_start: Callable[[], None] | None = None
+    ) -> None:
         handler = self._resolve_handler(type(task))
         async with self._semaphore:
+            if on_start:
+                on_start()
             await handler(self, task)
 
 

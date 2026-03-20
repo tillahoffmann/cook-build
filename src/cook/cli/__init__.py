@@ -216,6 +216,8 @@ def main(argv: list[str] | None = None) -> int:
             executor_cls = get_executor(executor_name)
             executor_cls.validate_tasks(ctx.tasks)
             return handlers[args.command](args, config, ctx, ui)
+        except KeyboardInterrupt:  # pragma: no cover
+            return 130
         except (
             ValueError,
             ConfigError,

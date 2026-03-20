@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from types import TracebackType
 
-from . import BuildStore, TaskRecord
+from . import BuildStore, RunRecord, TaskRecord
 
 
 class SqliteBuildStore(BuildStore):
@@ -14,66 +14,157 @@ class SqliteBuildStore(BuildStore):
         p.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(p))
         self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA busy_timeout=5000")
         self._ensure_schema()
 
     def _ensure_schema(self) -> None:
         self._conn.execute(
             """
-            CREATE TABLE IF NOT EXISTS tasks (
-                task_id TEXT PRIMARY KEY,
+            CREATE TABLE IF NOT EXISTS runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                pid INTEGER NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('pending', 'running', 'succeeded', 'failed')),
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
                 digest TEXT,
-                last_started TEXT,
-                last_succeeded TEXT,
-                last_failed TEXT,
                 error TEXT
             )
+            """
+        )
+        self._conn.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_runs_task_status
+            ON runs(task_id, status, id DESC)
             """
         )
         self._conn.commit()
 
     def get(self, task_id: str) -> TaskRecord | None:
         row = self._conn.execute(
-            "SELECT task_id, digest, last_started, last_succeeded, last_failed, "
-            "error FROM tasks WHERE task_id = ?",
+            """
+            SELECT
+                (SELECT started_at FROM runs
+                 WHERE task_id = ? AND status IN ('running', 'succeeded', 'failed')
+                 ORDER BY id DESC LIMIT 1),
+                (SELECT digest FROM runs
+                 WHERE task_id = ? AND status = 'succeeded'
+                 ORDER BY id DESC LIMIT 1),
+                (SELECT finished_at FROM runs
+                 WHERE task_id = ? AND status = 'succeeded'
+                 ORDER BY id DESC LIMIT 1),
+                (SELECT finished_at FROM runs
+                 WHERE task_id = ? AND status = 'failed'
+                 ORDER BY id DESC LIMIT 1),
+                (SELECT error FROM runs
+                 WHERE task_id = ? AND status = 'failed'
+                 ORDER BY id DESC LIMIT 1)
+            FROM runs WHERE task_id = ?
+            """,
+            (task_id, task_id, task_id, task_id, task_id, task_id),
+        ).fetchone()
+        if row is None or row[0] is None:
+            return None
+        return TaskRecord(
+            task_id=task_id,
+            digest=row[1],
+            last_started=_parse_dt(row[0]),
+            last_succeeded=_parse_dt(row[2]),
+            last_failed=_parse_dt(row[3]),
+            error=row[4],
+        )
+
+    def start_run(
+        self, task_id: str, session_id: str, pid: int, started_at: datetime
+    ) -> int:
+        cursor = self._conn.execute(
+            "INSERT INTO runs (task_id, session_id, pid, status, started_at) "
+            "VALUES (?, ?, ?, 'pending', ?)",
+            (task_id, session_id, pid, _format_dt(started_at)),
+        )
+        self._conn.commit()
+        return cursor.lastrowid  # type: ignore[return-value]
+
+    def update_run_status(self, run_id: int, status: str) -> None:
+        self._conn.execute("UPDATE runs SET status = ? WHERE id = ?", (status, run_id))
+        self._conn.commit()
+
+    def finish_run(
+        self,
+        run_id: int,
+        status: str,
+        finished_at: datetime,
+        digest: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        self._conn.execute(
+            "UPDATE runs SET status = ?, finished_at = ?, digest = ?, error = ? "
+            "WHERE id = ?",
+            (status, _format_dt(finished_at), digest, error, run_id),
+        )
+        self._conn.commit()
+
+    def get_running(self, task_id: str) -> RunRecord | None:
+        row = self._conn.execute(
+            "SELECT id, task_id, session_id, pid, status, started_at, "
+            "finished_at, digest, error "
+            "FROM runs WHERE task_id = ? AND status IN ('pending', 'running') "
+            "ORDER BY id DESC LIMIT 1",
             (task_id,),
         ).fetchone()
         if row is None:
             return None
-        return TaskRecord(
-            task_id=row[0],
-            digest=row[1],
-            last_started=_parse_dt(row[2]),
-            last_succeeded=_parse_dt(row[3]),
-            last_failed=_parse_dt(row[4]),
-            error=row[5],
+        return RunRecord(
+            id=row[0],
+            task_id=row[1],
+            session_id=row[2],
+            pid=row[3],
+            status=row[4],
+            started_at=_parse_dt(row[5]),  # type: ignore[arg-type]
+            finished_at=_parse_dt(row[6]),
+            digest=row[7],
+            error=row[8],
         )
 
-    def save(self, record: TaskRecord) -> None:
+    def delete_run(self, run_id: int) -> None:
+        self._conn.execute("DELETE FROM runs WHERE id = ?", (run_id,))
+        self._conn.commit()
+
+    def cleanup_session(self, session_id: str) -> None:
+        # Pending tasks were never started — just remove them
         self._conn.execute(
-            """
-            INSERT INTO tasks (task_id, digest, last_started, last_succeeded,
-                               last_failed, error)
-            VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT(task_id) DO UPDATE SET
-                digest=excluded.digest,
-                last_started=COALESCE(excluded.last_started, tasks.last_started),
-                last_succeeded=COALESCE(excluded.last_succeeded, tasks.last_succeeded),
-                last_failed=COALESCE(excluded.last_failed, tasks.last_failed),
-                error=excluded.error
-            """,
-            (
-                record.task_id,
-                record.digest,
-                _format_dt(record.last_started),
-                _format_dt(record.last_succeeded),
-                _format_dt(record.last_failed),
-                record.error,
-            ),
+            "DELETE FROM runs WHERE session_id = ? AND status = 'pending'",
+            (session_id,),
+        )
+        # Running tasks were interrupted — mark as failed
+        self._conn.execute(
+            "UPDATE runs SET status = 'failed', finished_at = ?, "
+            "error = 'interrupted' "
+            "WHERE session_id = ? AND status = 'running'",
+            (_format_dt(datetime.now(timezone.utc)), session_id),
         )
         self._conn.commit()
 
     def delete(self, task_id: str) -> None:
-        self._conn.execute("DELETE FROM tasks WHERE task_id = ?", (task_id,))
+        self._conn.execute("DELETE FROM runs WHERE task_id = ?", (task_id,))
+        self._conn.commit()
+
+    def save(self, record: TaskRecord) -> None:
+        """Save a task record directly (used by validate command).
+
+        Inserts a synthetic 'succeeded' run with the given digest.
+        """
+        self._conn.execute(
+            "INSERT INTO runs (task_id, session_id, pid, status, started_at, "
+            "finished_at, digest) VALUES (?, 'validate', 0, 'succeeded', ?, ?, ?)",
+            (
+                record.task_id,
+                _format_dt(record.last_started or datetime.now(timezone.utc)),
+                _format_dt(record.last_succeeded or datetime.now(timezone.utc)),
+                record.digest,
+            ),
+        )
         self._conn.commit()
 
     def close(self) -> None:
@@ -98,6 +189,6 @@ def _parse_dt(value: str | None) -> datetime | None:
 
 
 def _format_dt(value: datetime | None) -> str | None:
-    if value is None:
+    if value is None:  # pragma: no cover
         return None
     return value.isoformat()
