@@ -39,6 +39,8 @@ jobs:
           uv run ruff check
       - name: Type-check the code
         run: uv run pyright
+      - name: Pull Slurm Docker image
+        run: docker pull nathanhess/slurm:full
       - name: Run the tests
         run: uv run pytest --cov=src/cook --cov-report=term-missing --cov-fail-under=100
       - name: Run README.md doctests

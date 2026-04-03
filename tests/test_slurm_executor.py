@@ -49,21 +49,8 @@ def _docker_available() -> bool:
         return False
 
 
-def _image_available() -> bool:
-    try:
-        r = subprocess.run(
-            ["docker", "image", "inspect", IMAGE],
-            capture_output=True,
-            timeout=10,
-        )
-        return r.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
-
-
 pytestmark = [
-    pytest.mark.skipif(not _docker_available(), reason="Docker not available"),
-    pytest.mark.skipif(not _image_available(), reason=f"{IMAGE} not pulled"),
+    pytest.mark.xfail(not _docker_available(), reason="Docker not available"),
 ]
 
 
