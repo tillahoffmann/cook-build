@@ -37,23 +37,6 @@ CONTAINER_NAME = f"cook-slurm-test-{uuid4()}"
 IMAGE = "nathanhess/slurm:full"
 
 
-def _docker_available() -> bool:
-    try:
-        r = subprocess.run(
-            ["docker", "info"],
-            capture_output=True,
-            timeout=10,
-        )
-        return r.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
-
-
-pytestmark = [
-    pytest.mark.xfail(not _docker_available(), reason="Docker not available"),
-]
-
-
 @pytest.fixture(scope="module")
 def shared_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Host directory mounted into the container at /shared."""
@@ -92,8 +75,7 @@ def slurm_container(shared_dir: Path) -> Generator[str]:
         capture_output=True,
         text=True,
     )
-    if result.returncode != 0:
-        pytest.skip(f"Failed to start Slurm container: {result.stderr}")
+    assert result.returncode == 0, f"Failed to start Slurm container: {result.stderr}"
 
     # Wait for Slurm to become ready
     for _ in range(30):
@@ -107,7 +89,7 @@ def slurm_container(shared_dir: Path) -> Generator[str]:
             break
     else:
         subprocess.run(["docker", "rm", "-f", CONTAINER_NAME], capture_output=True)
-        pytest.skip("Slurm did not become ready in time")
+        pytest.fail("Slurm did not become ready in time")
 
     yield CONTAINER_NAME
 

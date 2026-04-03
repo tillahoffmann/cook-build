@@ -222,18 +222,23 @@ def test_resolve_relative(tmp_path: Path) -> None:
 
 def test_relative_inside_project(tmp_path: Path) -> None:
     with Context(project_root=tmp_path) as ctx:
-        assert ctx.relative(tmp_path / "src" / "foo.c") == Path("src/foo.c")
+        assert ctx.relative(tmp_path / "src" / "foo.c") == "src/foo.c"
 
 
 def test_relative_outside_project(tmp_path: Path) -> None:
     with Context(project_root=tmp_path) as ctx:
         outside = Path("/usr/include/stdio.h")
-        assert ctx.relative(outside) == outside
+        assert ctx.relative(outside) == str(outside)
 
 
 def test_relative_already_relative(tmp_path: Path) -> None:
     with Context(project_root=tmp_path) as ctx:
-        assert ctx.relative("foo.c") == Path("foo.c")
+        assert ctx.relative("foo.c") == "foo.c"
+
+
+def test_relative_gcs_returns_label(tmp_path: Path) -> None:
+    with Context(project_root=tmp_path) as ctx:
+        assert ctx.relative("gs://bucket/key.txt") == "gs://bucket/key.txt"
 
 
 def test_resolve_absolute(tmp_path: Path) -> None:

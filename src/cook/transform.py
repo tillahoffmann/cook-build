@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Protocol
 
 from .executor import registered_executor_names
+from .resource import resolve_resource
 from .task import Task
 
 
@@ -13,11 +14,8 @@ class GraphTransform(Protocol):
     ) -> dict[str, Task]: ...
 
 
-def _resolve(path: str | Path, root: Path) -> Path:
-    p = Path(path)
-    if p.is_absolute():
-        return p.resolve()
-    return (root / p).resolve()
+def _resolve_key(path: str | Path, root: Path) -> str:
+    return resolve_resource(path, root).label
 
 
 def check_deps_registered(
@@ -37,22 +35,22 @@ def check_outputs(
     tasks: dict[str, Task], project_root: Path | None = None
 ) -> dict[str, Task]:
     root = project_root or Path.cwd()
-    seen_outputs: dict[Path, str] = {}
+    seen_outputs: dict[str, str] = {}
     for task in tasks.values():
         for out in task.outputs:
-            resolved = _resolve(out, root)
-            if resolved in seen_outputs:
+            key = _resolve_key(out, root)
+            if key in seen_outputs:
                 raise ValueError(
                     f"Duplicate output path {str(out)!r}: "
-                    f"both {seen_outputs[resolved]!r} and {task.name!r} "
+                    f"both {seen_outputs[key]!r} and {task.name!r} "
                     "declare it as an output."
                 )
-            seen_outputs[resolved] = task.name
+            seen_outputs[key] = task.name
 
     for task in tasks.values():
-        resolved_outputs = {_resolve(o, root) for o in task.outputs}
+        resolved_outputs = {_resolve_key(o, root) for o in task.outputs}
         for inp in task.file_inputs:
-            resolved_inp = _resolve(inp, root)
+            resolved_inp = _resolve_key(inp, root)
             if resolved_inp in resolved_outputs:
                 raise ValueError(
                     f"Task {task.name!r} has {str(inp)!r} as both "
@@ -66,16 +64,16 @@ def resolve_file_deps(
 ) -> dict[str, Task]:
     """Add implicit task dependencies based on file input/output matching."""
     root = project_root or Path.cwd()
-    output_index: dict[Path, Task] = {}
+    output_index: dict[str, Task] = {}
     for task in tasks.values():
         for out in task.outputs:
-            output_index[_resolve(out, root)] = task
+            output_index[_resolve_key(out, root)] = task
 
     for task in tasks.values():
         explicit = set(task.task_deps)
         for inp in task.file_inputs:
-            resolved = _resolve(inp, root)
-            producer = output_index.get(resolved)
+            key = _resolve_key(inp, root)
+            producer = output_index.get(key)
             if producer is not None and producer not in explicit:
                 task._deps.add(producer)
                 explicit.add(producer)

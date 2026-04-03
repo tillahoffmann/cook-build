@@ -6,6 +6,7 @@ from contextvars import ContextVar, Token
 from pathlib import Path
 from typing import Any, Self
 
+from .resource import Resource, resolve_resource
 from .task import GroupTask, ShellTask, Task
 from .transform import DEFAULT_TRANSFORMS, GraphTransform
 
@@ -81,13 +82,21 @@ class Context:
             return p.resolve()
         return (self.project_root / p).resolve()
 
-    def relative(self, path: str | Path) -> Path:
-        """Return a path relative to the project root, or absolute if outside."""
-        path = Path(path)
+    def resolve_to_resource(self, path: str | Path) -> Resource:
+        """Resolve a path or URL to a Resource."""
+        return resolve_resource(path, self.project_root)
+
+    def relative(self, path: str | Path) -> str:
+        """Return a display string: relative for local files, label for remote."""
+        resource = resolve_resource(path, self.project_root)
+        from .resource import FileResource
+
+        if not isinstance(resource, FileResource):
+            return resource.label
         try:
-            return path.relative_to(self.project_root)
+            return str(resource.path.relative_to(self.project_root))
         except ValueError:
-            return path
+            return str(resource.path)
 
     @property
     def db_path(self) -> Path:

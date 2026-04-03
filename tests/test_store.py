@@ -272,3 +272,20 @@ def test_file_cache_missing_file(tmp_path: Path) -> None:
     cache = FileDigestCache()
     with pytest.raises(FileNotFoundError):
         cache.hash_file(tmp_path / "gone.txt")
+
+
+def test_hash_resource_caches_non_file_resources() -> None:
+    """hash_resource should cache digest results for non-FileResource resources."""
+    from unittest.mock import MagicMock
+
+    from cook.resource import GcsResource
+
+    cache = FileDigestCache()
+    resource = MagicMock(spec=GcsResource)
+    resource.digest.return_value = b"fakedigest"
+    resource.label = "gs://b/k"
+
+    h1 = cache.hash_resource(resource)
+    h2 = cache.hash_resource(resource)
+    assert h1 == h2 == b"fakedigest"
+    assert resource.digest.call_count == 1  # cached on second call

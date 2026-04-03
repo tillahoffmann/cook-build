@@ -4,7 +4,9 @@ version = "1.0.0"
 description = "A Python-native build system with content-hash-based incremental builds"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "google-cloud-storage>=2.0.0",
+]
 
 [project.scripts]
 cook = "cook.cli:main"

@@ -25,9 +25,13 @@ def cmd_validate(
         if not task.outputs:
             ui.status(f"[{task.name}] skipped (no outputs or always-run dependency)")
             continue
-        missing = [ctx.resolve(o) for o in task.outputs if not ctx.resolve(o).exists()]
+        missing = [
+            ctx.resolve_to_resource(o).label
+            for o in task.outputs
+            if not ctx.resolve_to_resource(o).exists()
+        ]
         if missing:
-            paths = ", ".join(str(p) for p in missing)
+            paths = ", ".join(missing)
             ui.status(f"[{task.name}] skipped (missing outputs: {paths})")
             continue
         validatable.append(task)

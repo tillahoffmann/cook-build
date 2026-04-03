@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .executor import Executor, TaskExecutionError
+from .resource import resolve_resource
 from .store import BuildStore, FileDigestCache
 from .task import ShellTask, Task
 from .transform import collect_transitive
@@ -16,10 +17,10 @@ from .ui import Output, Verbosity
 
 
 class TaskOutputError(Exception):
-    def __init__(self, task: Task, missing: list[Path]) -> None:
+    def __init__(self, task: Task, missing: list[str]) -> None:
         self.task = task
         self.missing = missing
-        paths = ", ".join(str(p) for p in missing)
+        paths = ", ".join(missing)
         super().__init__(
             f"Task {task.name!r} did not produce expected outputs: {paths}"
         )
@@ -80,25 +81,18 @@ def compute_effective_digest(
     h.update(task.digest().encode())
 
     for fi in task.file_inputs:
-        resolved = (
-            (root / fi).resolve() if not Path(fi).is_absolute() else Path(fi).resolve()
-        )
+        resource = resolve_resource(fi, root)
         try:
             content_hash = (
-                file_cache.hash_file(resolved)
+                file_cache.hash_resource(resource)
                 if file_cache is not None
-                else hashlib.sha256(resolved.read_bytes()).digest()
+                else resource.digest()
             )
         except FileNotFoundError:
             raise FileNotFoundError(
-                f"Input file '{resolved}' not found for task '{task.name}'"
+                f"Input file '{resource.label}' not found for task '{task.name}'"
             )
-        # Use relative path for files inside project, absolute for external
-        try:
-            path_for_hash = str(resolved.relative_to(root))
-        except ValueError:
-            path_for_hash = str(resolved)
-        h.update(path_for_hash.encode())
+        h.update(resource.label.encode())
         h.update(content_hash)
 
     for _, digest in dep_digests:
@@ -157,11 +151,7 @@ def is_stale(
         _memo[task.task_id] = True
         return True
 
-    def _resolve(p: str | Path) -> Path:
-        pp = Path(p)
-        return (root / pp).resolve() if not pp.is_absolute() else pp.resolve()
-
-    result = not all(_resolve(o).exists() for o in task.outputs)
+    result = not all(resolve_resource(o, root).exists() for o in task.outputs)
     _memo[task.task_id] = result
     return result
 
@@ -195,9 +185,7 @@ def staleness_reason(
         effective = compute_effective_digest(task, store, file_cache, root)
     except FileNotFoundError:
         missing_inputs = [
-            str(f)
-            for f in task.file_inputs
-            if not (root / f).resolve().exists() and not Path(str(f)).resolve().exists()
+            str(f) for f in task.file_inputs if not resolve_resource(f, root).exists()
         ]
         n = len(missing_inputs)
         return f"{n} {'input is' if n == 1 else 'inputs are'} missing"
@@ -207,13 +195,9 @@ def staleness_reason(
     if record.digest != effective:
         return "digest changed"
 
-    def _resolve(p: str | Path) -> Path:
-        pp = Path(p)
-        if pp.is_absolute():
-            return pp.resolve()
-        return (root / pp).resolve()
-
-    missing_outputs = [o for o in task.outputs if not _resolve(o).exists()]
+    missing_outputs = [
+        o for o in task.outputs if not resolve_resource(o, root).exists()
+    ]
     if missing_outputs:
         n = len(missing_outputs)
         return f"{n} {'output is' if n == 1 else 'outputs are'} missing"
@@ -359,7 +343,10 @@ class Scheduler:
         if effective is not None:
             record = self._store.get(task.task_id)
             if record is not None and record.digest == effective:
-                if all(self._resolve(o).exists() for o in task.outputs):
+                if all(
+                    resolve_resource(o, self._project_root).exists()
+                    for o in task.outputs
+                ):
                     self._fresh += 1
                     self._ui.task_fresh(task.name)
                     # Task is fresh — discard the pending run
@@ -393,9 +380,8 @@ class Scheduler:
 
         # 6. Verify outputs exist
         if task.outputs:
-            missing = [
-                self._resolve(o) for o in task.outputs if not self._resolve(o).exists()
-            ]
+            resources = [resolve_resource(o, self._project_root) for o in task.outputs]
+            missing = [r.label for r in resources if not r.exists()]
             if missing:
                 err = TaskOutputError(task, missing)
                 self._task_failures += 1
@@ -409,12 +395,6 @@ class Scheduler:
 
         # 7. Store record
         self._store.finish_run(run_id, "succeeded", finished_at, digest=effective)
-
-    def _resolve(self, path: str | Path) -> Path:
-        p = Path(path)
-        if p.is_absolute():
-            return p.resolve()
-        return (self._project_root / p).resolve()
 
     def _compute_effective_digest(self, task: Task) -> str | None:
         return compute_effective_digest(
