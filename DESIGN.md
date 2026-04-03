@@ -171,7 +171,7 @@ Persists build state across runs. Abstract base class with `get(task_id)`, `save
 
 **TaskRecord** stores: task_id, effective digest, last_started, last_succeeded, last_failed, duration, and error message. Timing fields are stored for user inspection (e.g., `cook inspect` could show when a task last ran).
 
-Default implementation uses **SQLite** (`.cook.db` in WAL mode). Operations are synchronous. Concurrent `cook` invocations against the same project are safe because builds are idempotent — redundant work may occur but results are correct.
+Default implementation uses **SQLite** (`.cook/store.db` in WAL mode). Operations are synchronous. Concurrent `cook` invocations against the same project are safe because builds are idempotent — redundant work may occur but results are correct.
 
 ---
 
@@ -344,10 +344,12 @@ src/cook/
         sqlite.py        SqliteBuildStore
     cli/
         __init__.py      argparse CLI entry point, parser setup
-        cmd_exec.py      exec command
+        cmd_build.py     build command (match by output path)
+        cmd_exec.py      run command
         cmd_inspect.py   inspect command
         cmd_invalidate.py invalidate command
-        cmd_ls.py        ls command
+        cmd_ls.py        list command
+        cmd_ui.py        ui command (interactive DAG visualization)
         cmd_validate.py  validate command
         util.py          Shared CLI helpers (match_targets, collect_transitive, etc.)
 ```
