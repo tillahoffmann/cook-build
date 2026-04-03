@@ -2,6 +2,9 @@
 
 A Python-native build system with content-hash-based incremental builds. Define tasks in plain Python, and Cook handles dependency ordering, parallel execution, and skipping unchanged work.
 
+> [!WARNING]
+> Cook v1.0.0 is a complete rewrite of the build system with different syntax. Pin `cook-build<1.0.0` to retain the old `cook.create_task` syntax.
+
 ## Quick start
 
 Install cook by running `pip install cook-build` or your favorite Python package manager. Then create a `recipe.py` in your project root:
@@ -15,17 +18,20 @@ Install cook by running `pip install cook-build` or your favorite Python package
 
 >>> with group("compile"):
 ...     for src, obj in zip(sources, objects):
-...         _ = sh(
+...         sh(
 ...             name=f"compile-{src.stem}",
 ...             cmd=f"gcc -c {src} -o {obj}",
 ...             inputs=[src], outputs=[obj],
 ...         )
+ShellTask(name='compile-util', inputs=[PosixPath('example/util.c')], outputs=[PosixPath('example/util.o')], extra={}, cmd='gcc -c example/util.c -o example/util.o', env=None, cwd=None)
+ShellTask(name='compile-main', inputs=[PosixPath('example/main.c')], outputs=[PosixPath('example/main.o')], extra={}, cmd='gcc -c example/main.c -o example/main.o', env=None, cwd=None)
 
->>> _ = sh(
+>>> sh(
 ...     name="link",
 ...     cmd=f"gcc {' '.join(str(o) for o in objects)} -o build/app",
 ...     inputs=objects, outputs=["build/app"],
 ... )
+ShellTask(name='link', inputs=[PosixPath('example/util.o'), PosixPath('example/main.o')], outputs=['build/app'], extra={}, cmd='gcc example/util.o example/main.o -o build/app', env=None, cwd=None)
 
 ```
 
@@ -38,8 +44,8 @@ cook run "*"
 On the second run, unchanged tasks are skipped automatically:
 
 ```
-[1/3] Fresh   compile-foo
-[2/3] Fresh   compile-bar
+[1/3] Fresh   compile-util
+[2/3] Fresh   compile-main
 [3/3] Fresh   link
 
 Build finished: 3 fresh in 0.0s
@@ -83,14 +89,21 @@ cook run -n [pattern]            # show what would run (--dry-run)
 cook run -k [pattern]            # keep going on failure (--keep-going)
 cook run -j4 [pattern]           # run up to 4 tasks in parallel (--jobs)
 cook run -s [pattern]            # stream task output to terminal (--stream)
+cook run -x slurm [pattern]      # override executor backend (--executor)
+
 cook build <output-pattern>      # run tasks that produce matching outputs
+
 cook inspect [pattern]           # show dependency graph and staleness
 cook inspect --json [pattern]    # JSON lines output
+
 cook list [pattern]              # list task names
 cook list -s [pattern]           # list only stale tasks (--stale)
 cook list --json [pattern]       # JSON lines output
+
 cook invalidate <pattern>        # force tasks to re-run next time
+
 cook validate <pattern>          # mark tasks as up-to-date without running
+
 cook ui [pattern]                # interactive DAG visualization
 ```
 
@@ -137,6 +150,8 @@ max_concurrent = 8          # parallel task limit (default: 1)
 [cook.slurm]
 max_concurrent = 64
 poll_interval = 2.0
+poll_timeout = 86400.0
+poll_retries = 10
 
 [cook.slurm.defaults]      # default sbatch flags for all slurm tasks
 mem = "4G"

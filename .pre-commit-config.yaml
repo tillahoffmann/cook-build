@@ -23,7 +23,7 @@ repos:
         always_run: true
       - id: doctest
         name: doctest
-        entry: bash -c 'uv run python -m doctest README.md'
+        entry: bash -c 'uv run python -m doctest -o NORMALIZE_WHITESPACE README.md'
         language: system
         files: (README\.md|\.py$)
         pass_filenames: false
