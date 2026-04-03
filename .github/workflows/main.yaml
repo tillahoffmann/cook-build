@@ -1,0 +1,54 @@
+name: Cook Build System
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version:
+          - '3.11'
+          - '3.12'
+          - '3.13'
+          - '3.14'
+    permissions:
+      id-token: write  # Required for trusted publishing to PyPI.
+      contents: read  # Required to check out the repo.
+    steps:
+      - uses: "actions/checkout@v4"
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install project
+        run: |
+          uv sync --all-groups
+          uv pip install -e .
+      - name: Lint the code
+        run: |
+          uv run ruff format --check
+          uv run ruff check
+      - name: Type-check the code
+        run: uv run pyright
+      - name: Pull Slurm Docker image
+        run: docker pull nathanhess/slurm:full
+      - name: Run the tests
+        run: uv run pytest --cov=src/cook --cov-report=term-missing --cov-fail-under=100
+      - name: Run README.md doctests
+        run: uv run python -m doctest -o NORMALIZE_WHITESPACE README.md
+      - name: Build a package.
+        run: uv run python -m build
+      - name: Publish to PyPI
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.python-version == '3.13'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true

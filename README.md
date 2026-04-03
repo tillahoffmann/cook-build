@@ -13,7 +13,7 @@ Install cook by running `pip install cook-build` or your favorite Python package
 >>> from pathlib import Path
 >>> from cook import sh, group
 
->>> sources = list(Path("example").glob("*.c"))
+>>> sources = sorted(Path("example").glob("*.c"))
 >>> objects = [src.with_suffix(".o") for src in sources]
 
 >>> with group("compile"):
@@ -23,15 +23,15 @@ Install cook by running `pip install cook-build` or your favorite Python package
 ...             cmd=f"gcc -c {src} -o {obj}",
 ...             inputs=[src], outputs=[obj],
 ...         )
-ShellTask(name='compile-util', inputs=[PosixPath('example/util.c')], outputs=[PosixPath('example/util.o')], extra={}, cmd='gcc -c example/util.c -o example/util.o', env=None, cwd=None)
 ShellTask(name='compile-main', inputs=[PosixPath('example/main.c')], outputs=[PosixPath('example/main.o')], extra={}, cmd='gcc -c example/main.c -o example/main.o', env=None, cwd=None)
+ShellTask(name='compile-util', inputs=[PosixPath('example/util.c')], outputs=[PosixPath('example/util.o')], extra={}, cmd='gcc -c example/util.c -o example/util.o', env=None, cwd=None)
 
 >>> sh(
 ...     name="link",
 ...     cmd=f"gcc {' '.join(str(o) for o in objects)} -o build/app",
 ...     inputs=objects, outputs=["build/app"],
 ... )
-ShellTask(name='link', inputs=[PosixPath('example/util.o'), PosixPath('example/main.o')], outputs=['build/app'], extra={}, cmd='gcc example/util.o example/main.o -o build/app', env=None, cwd=None)
+ShellTask(name='link', inputs=[PosixPath('example/main.o'), PosixPath('example/util.o')], outputs=['build/app'], extra={}, cmd='gcc example/main.o example/util.o -o build/app', env=None, cwd=None)
 
 ```
 
@@ -44,8 +44,8 @@ cook run "*"
 On the second run, unchanged tasks are skipped automatically:
 
 ```
-[1/3] Fresh   compile-util
-[2/3] Fresh   compile-main
+[1/3] Fresh   compile-main
+[2/3] Fresh   compile-util
 [3/3] Fresh   link
 
 Build finished: 3 fresh in 0.0s
