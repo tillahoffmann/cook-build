@@ -225,7 +225,7 @@ def main(argv: list[str] | None = None) -> int:
             TaskExecutionError,
             PollTimeoutError,
             TaskOutputError,
-            FileNotFoundError,
+            OSError,
         ) as e:
             ui.error(str(e))
             return 1

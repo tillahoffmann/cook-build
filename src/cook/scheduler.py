@@ -108,6 +108,11 @@ class StalenessChecker:
                 raise FileNotFoundError(
                     f"Input file '{resource.label}' not found for task '{task.name}'"
                 ) from exc
+            except OSError as exc:
+                raise OSError(
+                    f"Cannot read input '{resource.label}' for task "
+                    f"'{task.name}': {exc}"
+                ) from exc
             h.update(resource.label.encode())
             h.update(content_hash)
 
