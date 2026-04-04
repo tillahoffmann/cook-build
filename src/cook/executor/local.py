@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -41,16 +42,20 @@ class LocalExecutor(Executor):
         return cls(max_concurrent=jobs if jobs is not None else cfg.max_concurrent)
 
 
+async def _create_subprocess(
+    cmd: str | Sequence[str], **kwargs: Any
+) -> asyncio.subprocess.Process:
+    if isinstance(cmd, str):
+        return await asyncio.create_subprocess_shell(cmd, **kwargs)
+    return await asyncio.create_subprocess_exec(*cmd, **kwargs)
+
+
 @LocalExecutor.register_handler(task_type=ShellTask)
 async def _handle_shell_task(executor: Executor, task: Task) -> None:
     assert isinstance(task, ShellTask)
     if executor.stream:
         # Pass-through mode: no capture, output goes directly to terminal
-        proc = await asyncio.create_subprocess_shell(
-            task.cmd,
-            cwd=task.cwd,
-            env=task.env,
-        )
+        proc = await _create_subprocess(task.cmd, cwd=task.cwd, env=task.env)
         await proc.communicate()
         if proc.returncode:
             raise TaskExecutionError(
@@ -60,7 +65,7 @@ async def _handle_shell_task(executor: Executor, task: Task) -> None:
             )
     else:
         # Capture mode: capture both stdout and stderr
-        proc = await asyncio.create_subprocess_shell(
+        proc = await _create_subprocess(
             task.cmd,
             cwd=task.cwd,
             env=task.env,

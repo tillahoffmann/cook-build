@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
+import shlex
 import time
 import uuid
 from datetime import datetime, timezone
@@ -356,7 +357,8 @@ class Scheduler:
 
         # 5. Execute (transition to running happens when semaphore is acquired)
         if isinstance(task, ShellTask):
-            self._ui.verbose(f"  $ {task.cmd}")
+            cmd_str = task.cmd if isinstance(task.cmd, str) else shlex.join(task.cmd)
+            self._ui.verbose(f"  $ {cmd_str}")
         started_at = datetime.now(timezone.utc)
 
         def on_start() -> None:

@@ -459,6 +459,22 @@ def test_build_wrapped_cmd_rejects_digit_start_env_key() -> None:
         _build_wrapped_cmd(task)
 
 
+def test_build_wrapped_cmd_sequence() -> None:
+    """Sequence cmd should be joined with shlex for slurm --wrap."""
+
+    task = ShellTask(name="seq", cmd=["echo", "hello world"])
+    result = _build_wrapped_cmd(task)
+    assert result == "echo 'hello world'"
+
+
+def test_build_wrapped_cmd_sequence_with_env() -> None:
+    """Sequence cmd with env should have exports prepended."""
+    task = ShellTask(name="seq-env", cmd=["echo", "hi"], env={"FOO": "bar"})
+    result = _build_wrapped_cmd(task)
+    assert "export FOO=bar;" in result
+    assert result.endswith("echo hi")
+
+
 async def test_poll_raises_on_consecutive_scontrol_errors() -> None:
     """_poll_job raises PollTimeoutError with last error after max consecutive failures."""
 

@@ -180,8 +180,9 @@ def _parse_scontrol(output: str) -> dict[str, str]:
 
 def _build_wrapped_cmd(task: ShellTask) -> str:
     """Build the shell command for --wrap, embedding env exports if needed."""
+    cmd = task.cmd if isinstance(task.cmd, str) else shlex.join(task.cmd)
     if not task.env:
-        return task.cmd
+        return cmd
     for k in task.env:
         if not _ENV_KEY_RE.match(k):
             raise ValueError(
@@ -191,7 +192,7 @@ def _build_wrapped_cmd(task: ShellTask) -> str:
     # Embed 'export K=V' before the user command so values with commas,
     # spaces, or other special chars are handled correctly.
     exports = " ".join(f"export {k}={shlex.quote(v)};" for k, v in task.env.items())
-    return f"{exports} {task.cmd}"
+    return f"{exports} {cmd}"
 
 
 _SBATCH_EXTRA_KEYS = {
