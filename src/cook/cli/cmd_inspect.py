@@ -37,8 +37,6 @@ def _task_to_dict(
             history["last_failed"] = record.last_failed.isoformat()
         if record.error:
             history["error"] = record.error
-        if record.duration is not None:
-            history["duration"] = round(record.duration, 3)
         if history:
             obj["history"] = history
     return obj

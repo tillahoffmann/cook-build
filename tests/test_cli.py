@@ -2061,7 +2061,6 @@ def test_inspect_json_with_history(
     assert obj["stale"] is False
     assert "history" in obj
     assert "last_succeeded" in obj["history"]
-    assert "duration" in obj["history"]
 
 
 def test_inspect_json_failed_task(

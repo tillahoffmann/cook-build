@@ -228,16 +228,8 @@ def print_task_detail(
         if record.last_started:
             print(f"    last started: {format_relative_time(record.last_started)}")
         if record.last_succeeded:
-            line = f"    last succeeded: {format_relative_time(record.last_succeeded)}"
-            if record.last_started and record.last_succeeded >= record.last_started:
-                duration = (record.last_succeeded - record.last_started).total_seconds()
-                line += f" ({duration:.1f}s)"
-            print(line)
+            print(f"    last succeeded: {format_relative_time(record.last_succeeded)}")
         if record.last_failed:
-            line = f"    last failed: {format_relative_time(record.last_failed)}"
-            if record.last_started and record.last_failed >= record.last_started:
-                duration = (record.last_failed - record.last_started).total_seconds()
-                line += f" ({duration:.1f}s)"
-            print(line)
+            print(f"    last failed: {format_relative_time(record.last_failed)}")
         if record.error:
             print(f"    error: {record.error}")
