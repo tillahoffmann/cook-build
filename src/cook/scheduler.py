@@ -88,10 +88,10 @@ def compute_effective_digest(
                 if file_cache is not None
                 else resource.digest()
             )
-        except FileNotFoundError:
+        except FileNotFoundError as exc:
             raise FileNotFoundError(
                 f"Input file '{resource.label}' not found for task '{task.name}'"
-            )
+            ) from exc
         h.update(resource.label.encode())
         h.update(content_hash)
 
@@ -241,6 +241,7 @@ class Scheduler:
         self._fresh = 0
         self._skipped = 0
         self._task_failures = 0
+        self._file_cache = FileDigestCache()
 
         # Count total tasks for progress counter
         all_tasks = collect_transitive(targets)

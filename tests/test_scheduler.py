@@ -537,8 +537,9 @@ async def test_missing_file_input_clear_error(
         outputs=[str(outfile)],
     )
     sched = Scheduler(store, executor)
-    with pytest.raises(FileNotFoundError, match="nonexistent.txt"):
+    with pytest.raises(FileNotFoundError, match="nonexistent.txt") as exc_info:
         await sched.run([task])
+    assert exc_info.value.__cause__ is not None
 
 
 async def test_implicit_file_dep_ordering(

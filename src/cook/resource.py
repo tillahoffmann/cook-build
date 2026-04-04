@@ -82,7 +82,13 @@ def resolve_resource(path: str | Path, project_root: Path | None = None) -> Reso
     s = str(path)
     parsed = urlparse(s)
     if parsed.scheme == "gs":
-        return GcsResource(bucket=parsed.netloc, object_key=parsed.path.lstrip("/"))
+        object_key = parsed.path.lstrip("/")
+        if not object_key:
+            raise ValueError(
+                f"gs:// URL has empty object key: {s!r}. "
+                f"Expected format: gs://bucket/path/to/object"
+            )
+        return GcsResource(bucket=parsed.netloc, object_key=object_key)
     if parsed.scheme and parsed.scheme != "file":
         raise ValueError(
             f"Unsupported URL scheme {parsed.scheme!r} in {s!r}. "
@@ -90,8 +96,10 @@ def resolve_resource(path: str | Path, project_root: Path | None = None) -> Reso
         )
     # Local file: resolve against project_root
     if parsed.scheme == "file":
-        if parsed.netloc:
-            raise ValueError(f"file:// URLs with a hostname are not supported: {s!r}")
+        if not s.startswith("file:///"):
+            raise ValueError(
+                f"file:// URLs must use file:///absolute/path format: {s!r}"
+            )
         p = Path(unquote(parsed.path))
     else:
         p = Path(s)

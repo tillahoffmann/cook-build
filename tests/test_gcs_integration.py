@@ -119,6 +119,36 @@ async def test_gcs_input_unchanged_is_fresh(
     assert sched2._cooked == 0
 
 
+async def test_gcs_input_change_detected_on_same_scheduler(
+    tmp_path: Path,
+    gcs_bucket,  # type: ignore[no-untyped-def]
+    store: SqliteBuildStore,
+    executor: LocalExecutor,
+) -> None:
+    """Reusing a Scheduler instance must detect GCS input changes between runs."""
+    gcs_bucket.blob("src/data.txt").upload_from_string(b"version1")
+
+    outfile = tmp_path / "output.txt"
+    task = ShellTask(
+        name="process",
+        cmd=f"echo built > {outfile}",
+        inputs=[f"gs://{gcs_bucket.name}/src/data.txt"],
+        outputs=[str(outfile)],
+    )
+
+    sched = Scheduler(store, executor, project_root=tmp_path)
+    await sched.run([task])
+    assert sched._cooked == 1
+
+    # Change the GCS input between runs on the SAME scheduler
+    gcs_bucket.blob("src/data.txt").upload_from_string(b"version2")
+
+    await sched.run([task])
+    # Must rebuild, not report fresh
+    assert sched._cooked == 1
+    assert sched._fresh == 0
+
+
 async def test_gcs_output_verified(
     tmp_path: Path,
     gcs_bucket,  # type: ignore[no-untyped-def]

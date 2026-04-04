@@ -79,11 +79,14 @@ def test_resolve_resource_gs() -> None:
     assert r.object_key == "path/to/obj.txt"
 
 
-def test_resolve_resource_gs_no_key() -> None:
-    r = resolve_resource("gs://bucket-only/")
-    assert isinstance(r, GcsResource)
-    assert r.bucket == "bucket-only"
-    assert r.object_key == ""
+def test_resolve_resource_gs_no_key_rejected() -> None:
+    with pytest.raises(ValueError, match="empty object key"):
+        resolve_resource("gs://bucket-only/")
+
+
+def test_resolve_resource_gs_bucket_only_rejected() -> None:
+    with pytest.raises(ValueError, match="empty object key"):
+        resolve_resource("gs://bucket-only")
 
 
 def test_resolve_resource_unsupported_scheme() -> None:
@@ -109,8 +112,13 @@ def test_resolve_resource_file_scheme_with_spaces(tmp_path: Path) -> None:
 
 
 def test_resolve_resource_file_scheme_with_hostname() -> None:
-    with pytest.raises(ValueError, match="file:// URLs with a hostname"):
+    with pytest.raises(ValueError, match="file:// URLs must use file:///"):
         resolve_resource("file://hostname/path")
+
+
+def test_resolve_resource_file_scheme_without_double_slash() -> None:
+    with pytest.raises(ValueError, match="file:// URLs must use file:///"):
+        resolve_resource("file:relative/path")
 
 
 def test_gcs_resource_label() -> None:
