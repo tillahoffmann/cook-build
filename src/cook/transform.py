@@ -14,10 +14,6 @@ class GraphTransform(Protocol):
     ) -> dict[str, Task]: ...
 
 
-def _resolve_key(path: str | Path, root: Path) -> str:
-    return resolve_resource(path, root).label
-
-
 def check_deps_registered(
     tasks: dict[str, Task], project_root: Path | None = None
 ) -> dict[str, Task]:
@@ -31,53 +27,62 @@ def check_deps_registered(
     return tasks
 
 
-def check_outputs(
-    tasks: dict[str, Task], project_root: Path | None = None
-) -> dict[str, Task]:
-    root = project_root or Path.cwd()
-    seen_outputs: dict[str, str] = {}
-    for task in tasks.values():
-        for out in task.outputs:
-            key = _resolve_key(out, root)
-            if key in seen_outputs:
-                raise ValueError(
-                    f"Duplicate output path {str(out)!r}: "
-                    f"both {seen_outputs[key]!r} and {task.name!r} "
-                    "declare it as an output."
-                )
-            seen_outputs[key] = task.name
+class CheckOutputsAndResolveFileDeps:
+    """Validate output paths and resolve file-based dependencies.
 
-    for task in tasks.values():
-        for inp in task.file_inputs:
-            resolved_inp = _resolve_key(inp, root)
-            if seen_outputs.get(resolved_inp) == task.name:
-                raise ValueError(
-                    f"Task {task.name!r} has {str(inp)!r} as both "
-                    "an input and an output."
-                )
-    return tasks
+    Path resolution results are cached for the duration of a single call.
+    """
 
+    def __init__(self) -> None:
+        self._cache: dict[str, str] = {}
 
-def resolve_file_deps(
-    tasks: dict[str, Task], project_root: Path | None = None
-) -> dict[str, Task]:
-    """Add implicit task dependencies based on file input/output matching."""
-    root = project_root or Path.cwd()
-    output_index: dict[str, Task] = {}
-    for task in tasks.values():
-        for out in task.outputs:
-            output_index[_resolve_key(out, root)] = task
+    def _resolve_key(self, path: str | Path, root: Path) -> str:
+        key = str(path)
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        result = resolve_resource(path, root).label
+        self._cache[key] = result
+        return result
 
-    for task in tasks.values():
-        explicit = set(task.task_deps)
-        for inp in task.file_inputs:
-            key = _resolve_key(inp, root)
-            producer = output_index.get(key)
-            if producer is not None and producer not in explicit:
-                task._deps.add(producer)
-                explicit.add(producer)
+    def __call__(
+        self, tasks: dict[str, Task], project_root: Path | None = None
+    ) -> dict[str, Task]:
+        root = project_root or Path.cwd()
+        self._cache.clear()
 
-    return tasks
+        # 1. Check for duplicate outputs and build output index.
+        seen_outputs: dict[str, str] = {}
+        output_index: dict[str, Task] = {}
+        for task in tasks.values():
+            for out in task.outputs:
+                resolved = self._resolve_key(out, root)
+                if resolved in seen_outputs:
+                    raise ValueError(
+                        f"Duplicate output path {str(out)!r}: "
+                        f"both {seen_outputs[resolved]!r} and {task.name!r} "
+                        "declare it as an output."
+                    )
+                seen_outputs[resolved] = task.name
+                output_index[resolved] = task
+
+        # 2. Check inputs don't overlap with same-task outputs,
+        #    and resolve file-based dependencies.
+        for task in tasks.values():
+            explicit = set(task.task_deps)
+            for inp in task.file_inputs:
+                resolved_inp = self._resolve_key(inp, root)
+                if seen_outputs.get(resolved_inp) == task.name:
+                    raise ValueError(
+                        f"Task {task.name!r} has {str(inp)!r} as both "
+                        "an input and an output."
+                    )
+                producer = output_index.get(resolved_inp)
+                if producer is not None and producer not in explicit:
+                    task._deps.add(producer)
+                    explicit.add(producer)
+
+        return tasks
 
 
 def check_extra_keys(
@@ -147,8 +152,7 @@ def collect_transitive(tasks: list[Task]) -> list[Task]:
 
 DEFAULT_TRANSFORMS: list[GraphTransform] = [
     check_deps_registered,
-    check_outputs,
+    CheckOutputsAndResolveFileDeps(),
     check_extra_keys,
-    resolve_file_deps,
     check_cycles,
 ]
