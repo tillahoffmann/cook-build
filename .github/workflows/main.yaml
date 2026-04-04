@@ -45,8 +45,25 @@ jobs:
         run: uv run pytest --cov=src/cook --cov-report=term-missing --cov-fail-under=100 --durations=5
       - name: Run README.md doctests
         run: uv run python -m doctest -o NORMALIZE_WHITESPACE README.md
-      - name: Build a package.
+      - name: Build the UI
+        run: |
+          cd ui
+          npm ci
+          npm run build
+      - name: Build a package
         run: uv run python -m build
+      - name: Verify UI is included in wheel
+        run: |
+          python -c "
+          import pathlib, sys, zipfile
+          whl = next(pathlib.Path('dist').glob('*.whl'))
+          names = zipfile.ZipFile(whl).namelist()
+          required = ['cook/static/index.html', 'cook/static/favicon.svg']
+          missing = [f for f in required if f not in names]
+          if missing:
+              sys.exit(f'Missing from wheel: {missing}')
+          print('UI assets verified in wheel')
+          "
       - name: Publish to PyPI
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.python-version == '3.13'
         uses: pypa/gh-action-pypi-publish@release/v1
