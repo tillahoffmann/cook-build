@@ -208,7 +208,7 @@ wheels = [
 
 [[package]]
 name = "cook-build"
-version = "1.1.2"
+version = "1.2.0"
 source = { virtual = "." }
 dependencies = [
     { name = "google-cloud-storage" },
