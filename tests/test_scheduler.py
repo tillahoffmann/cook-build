@@ -10,9 +10,10 @@ from cook.scheduler import (
     BuildError,
     DependencyFailedError,
     Scheduler,
+    StalenessChecker,
     TaskOutputError,
-    compute_effective_digest,
     is_stale,
+    staleness_reason,
 )
 from cook.store import TaskRecord
 from cook.store.sqlite import SqliteBuildStore
@@ -807,23 +808,24 @@ def test_is_stale_memoizes_diamond(tmp_path: Path, store: SqliteBuildStore) -> N
     )
 
     # Store records so everything is up-to-date
-    shared_digest = compute_effective_digest(shared, store)
+    checker = StalenessChecker(store, project_root=tmp_path)
+
+    shared_digest = checker.compute_effective_digest(shared)
     assert shared_digest is not None
     store.save(TaskRecord(task_id="shared", digest=shared_digest))
 
-    left_digest = compute_effective_digest(left, store)
+    left_digest = checker.compute_effective_digest(left)
     assert left_digest is not None
     store.save(TaskRecord(task_id="left", digest=left_digest))
 
-    right_digest = compute_effective_digest(right, store)
+    right_digest = checker.compute_effective_digest(right)
     assert right_digest is not None
     store.save(TaskRecord(task_id="right", digest=right_digest))
 
-    # Check both via shared memo dict — shared should be checked only once
-    memo: dict[str, bool] = {}
-    assert is_stale(left, store, _memo=memo) is False
-    assert "shared" in memo  # memoized
-    assert is_stale(right, store, _memo=memo) is False
+    # Check both — shared should be checked only once via internal memo
+    assert checker.is_stale(left) is False
+    assert "shared" in checker._stale_memo  # memoized
+    assert checker.is_stale(right) is False
 
 
 async def test_scheduler_resolves_absolute_output(
@@ -936,3 +938,12 @@ async def test_fresh_task_no_pending_residue(
 
     # Fresh task should not add a new run
     assert runs_after_second == runs_after_first
+
+
+def test_staleness_reason_convenience_wrapper(tmp_path: Path) -> None:
+    """staleness_reason convenience wrapper creates its own StalenessChecker."""
+    store = SqliteBuildStore(str(tmp_path / "store.db"))
+    task = ShellTask(name="t", cmd="true", outputs=["out.txt"])
+    reason = staleness_reason(task, store, project_root=tmp_path)
+    assert reason == "never run"
+    store.close()

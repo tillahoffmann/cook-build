@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,10 +41,10 @@ class FileResource:
 _gcs_client = None
 
 
-def _get_gcs_client():  # type: ignore[no-untyped-def]
+def _get_gcs_client():
     global _gcs_client
     if _gcs_client is None:
-        from google.cloud import storage  # type: ignore[import-untyped]
+        from google.cloud import storage
 
         _gcs_client = storage.Client()
     return _gcs_client
@@ -59,9 +60,7 @@ class GcsResource:
         return f"gs://{self.bucket}/{self.object_key}"
 
     def digest(self) -> bytes:
-        import base64
-
-        from google.api_core.exceptions import NotFound  # type: ignore[import-untyped]
+        from google.api_core.exceptions import NotFound
 
         client = _get_gcs_client()
         blob = client.bucket(self.bucket).blob(self.object_key)

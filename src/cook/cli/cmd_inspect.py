@@ -5,7 +5,7 @@ import json
 
 from ..config import Config
 from ..context import Context
-from ..scheduler import is_stale, staleness_reason
+from ..scheduler import StalenessChecker
 from ..store import FileDigestCache, TaskRecord
 from ..store.sqlite import SqliteBuildStore
 from ..task import ShellTask, Task
@@ -54,11 +54,13 @@ def cmd_inspect(
     all_tasks = collect_transitive(targets)
     db_path = ctx.db_path
     if db_path.exists():
-        cache = FileDigestCache()
         with SqliteBuildStore(str(db_path)) as store:
+            checker = StalenessChecker(
+                store, FileDigestCache(), project_root=ctx.project_root
+            )
             for task in all_tasks:
-                stale = is_stale(task, store, cache, project_root=ctx.project_root)
-                reason = staleness_reason(task, store, cache, ctx.project_root)
+                stale = checker.is_stale(task)
+                reason = checker.staleness_reason(task)
                 record = store.get(task.task_id)
                 if use_json:
                     print(json.dumps(_task_to_dict(task, stale, record, reason)))

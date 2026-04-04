@@ -115,16 +115,22 @@ function Flow() {
       })
       .catch((e) => setLoadError(e.message))
 
-    // Poll for updates every 3 seconds (conditional — skips if unchanged)
-    const interval = setInterval(() => {
+    // Poll for updates — waits for response before scheduling next poll
+    let cancelled = false
+    function poll() {
+      if (cancelled) return
       Promise.all([pollTasks(), pollEdges()])
         .then(([t, e]) => {
           if (t) setTasks(t)
           if (e) setEdgeData(e)
         })
         .catch(() => {})
-    }, 3000)
-    return () => clearInterval(interval)
+        .finally(() => {
+          if (!cancelled) setTimeout(poll, 3000)
+        })
+    }
+    const timeout = setTimeout(poll, 3000)
+    return () => { cancelled = true; clearTimeout(timeout) }
   }, [])
 
   const matchedNames = useMemo(() => {

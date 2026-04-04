@@ -6,10 +6,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from ..resource import Resource
+from ..resource import FileResource, Resource
 
 
 @dataclass
@@ -77,14 +75,15 @@ class FileDigestCache:
         cached = self._cache.get(resolved)
         if cached is not None and cached[0] == mtime_ns:
             return cached[1]
-        data = resolved.read_bytes()
-        content_hash = hashlib.sha256(data).digest()
+        h = hashlib.sha256()
+        with resolved.open("rb") as f:
+            while block := f.read(1024 * 1024):
+                h.update(block)
+        content_hash = h.digest()
         self._cache[resolved] = (mtime_ns, content_hash)
         return content_hash
 
     def hash_resource(self, resource: Resource) -> bytes:
-        from ..resource import FileResource
-
         if isinstance(resource, FileResource):
             return self.hash_file(resource.path)
         label = resource.label

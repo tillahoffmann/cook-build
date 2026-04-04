@@ -6,7 +6,7 @@ from contextvars import ContextVar, Token
 from pathlib import Path
 from typing import Any, Self
 
-from .resource import Resource, resolve_resource
+from .resource import FileResource, Resource, resolve_resource
 from .task import GroupTask, ShellTask, Task
 from .transform import DEFAULT_TRANSFORMS, GraphTransform
 
@@ -89,8 +89,6 @@ class Context:
     def relative(self, path: str | Path) -> str:
         """Return a display string: relative for local files, label for remote."""
         resource = resolve_resource(path, self.project_root)
-        from .resource import FileResource
-
         if not isinstance(resource, FileResource):
             return resource.label
         try:

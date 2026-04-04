@@ -84,7 +84,8 @@ class SqliteBuildStore(BuildStore):
             (task_id, session_id, pid, _format_dt(started_at)),
         )
         self._conn.commit()
-        return cursor.lastrowid  # type: ignore[return-value]
+        assert cursor.lastrowid is not None
+        return cursor.lastrowid
 
     def update_run_status(self, run_id: int, status: str) -> None:
         self._conn.execute("UPDATE runs SET status = ? WHERE id = ?", (status, run_id))
@@ -115,13 +116,15 @@ class SqliteBuildStore(BuildStore):
         ).fetchone()
         if row is None:
             return None
+        started_at = _parse_dt(row[5])
+        assert started_at is not None
         return RunRecord(
             id=row[0],
             task_id=row[1],
             session_id=row[2],
             pid=row[3],
             status=row[4],
-            started_at=_parse_dt(row[5]),  # type: ignore[arg-type]
+            started_at=started_at,
             finished_at=_parse_dt(row[6]),
             digest=row[7],
             error=row[8],
