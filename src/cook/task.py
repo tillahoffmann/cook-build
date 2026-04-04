@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
@@ -78,16 +79,20 @@ class Task:
 
 @dataclass(eq=False)
 class ShellTask(Task):
-    cmd: str = ""
+    cmd: str | Sequence[str] = ""
     env: dict[str, str] | None = None
     cwd: str | None = None
 
     def __post_init__(self) -> None:
         super().__post_init__()
-        if not self.cmd or not self.cmd.strip():
-            raise ValueError(
-                f"ShellTask {self.name!r}: cmd must not be empty or whitespace-only."
-            )
+        if isinstance(self.cmd, str):
+            if not self.cmd or not self.cmd.strip():
+                raise ValueError(
+                    f"ShellTask {self.name!r}: cmd must not be empty or whitespace-only."
+                )
+        else:
+            if not self.cmd:
+                raise ValueError(f"ShellTask {self.name!r}: cmd must not be empty.")
 
 
 @dataclass(eq=False)

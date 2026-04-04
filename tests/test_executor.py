@@ -185,6 +185,48 @@ async def test_stream_mode_failure() -> None:
     assert "streamed to terminal" in exc_info.value.stderr
 
 
+async def test_local_executor_runs_cmd_sequence(tmp_path: Path) -> None:
+    outfile = tmp_path / "out.txt"
+    executor = LocalExecutor()
+    # Sequence form: no shell expansion, args passed directly to exec
+    task = ShellTask(
+        name="seq", cmd=["python3", "-c", f"open('{outfile}', 'w').write('ok')"]
+    )
+    await executor.execute(task)
+    assert outfile.read_text() == "ok"
+
+
+async def test_local_executor_cmd_sequence_no_shell_expansion(tmp_path: Path) -> None:
+    outfile = tmp_path / "out.txt"
+    executor = LocalExecutor()
+    # "$HOME" should NOT be expanded when using sequence form
+    task = ShellTask(
+        name="no-expand",
+        cmd=["python3", "-c", f"open('{outfile}', 'w').write('$HOME')"],
+    )
+    await executor.execute(task)
+    assert outfile.read_text() == "$HOME"
+
+
+async def test_local_executor_cmd_sequence_raises_on_failure() -> None:
+    executor = LocalExecutor()
+    task = ShellTask(name="seq-fail", cmd=["python3", "-c", "raise SystemExit(2)"])
+    with pytest.raises(TaskExecutionError) as exc_info:
+        await executor.execute(task)
+    assert exc_info.value.returncode == 2
+
+
+async def test_local_executor_cmd_sequence_stream_mode(tmp_path: Path) -> None:
+    outfile = tmp_path / "out.txt"
+    executor = LocalExecutor(stream=True)
+    task = ShellTask(
+        name="seq-stream",
+        cmd=["python3", "-c", f"open('{outfile}', 'w').write('streamed')"],
+    )
+    await executor.execute(task)
+    assert outfile.read_text() == "streamed"
+
+
 # --- LocalConfig ---
 
 

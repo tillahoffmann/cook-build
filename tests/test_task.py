@@ -272,3 +272,19 @@ def test_extra_affects_digest() -> None:
     t1 = ShellTask(name="a", cmd="echo hi")
     t2 = ShellTask(name="a", cmd="echo hi", extra={"slurm": {"mem": "4G"}})
     assert t1.digest() != t2.digest()
+
+
+def test_shelltask_cmd_sequence() -> None:
+    t = ShellTask(name="a", cmd=["gcc", "-o", "main", "main.c"])
+    assert t.cmd == ["gcc", "-o", "main", "main.c"]
+
+
+def test_shelltask_cmd_sequence_empty_rejected() -> None:
+    with pytest.raises(ValueError, match="cmd must not be empty"):
+        ShellTask(name="a", cmd=[])
+
+
+def test_shelltask_cmd_sequence_digest_differs_from_str() -> None:
+    t1 = ShellTask(name="a", cmd="echo hello")
+    t2 = ShellTask(name="a", cmd=["echo", "hello"])
+    assert t1.digest() != t2.digest()

@@ -5,6 +5,7 @@ import asyncio
 import fnmatch
 import importlib.util
 import re
+import shlex
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -217,7 +218,8 @@ def print_task_detail(
 
     # Command (for ShellTask)
     if isinstance(task, ShellTask) and task.cmd:
-        cmd_display = task.cmd if len(task.cmd) <= 80 else task.cmd[:77] + "..."
+        cmd_str = task.cmd if isinstance(task.cmd, str) else shlex.join(task.cmd)
+        cmd_display = cmd_str if len(cmd_str) <= 80 else cmd_str[:77] + "..."
         print(f"    cmd: {cmd_display}")
 
     # Execution history from store

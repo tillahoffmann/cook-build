@@ -309,6 +309,16 @@ def test_group_as_dependency(tmp_path: Path) -> None:
     assert data in [d for d in train.task_deps]
 
 
+def test_sh_cmd_sequence(ctx: Context) -> None:
+    t = ctx.sh(name="build", cmd=["gcc", "-o", "main", "main.c"])
+    assert t.cmd == ["gcc", "-o", "main", "main.c"]
+
+
+def test_sh_cmd_sequence_empty_raises(ctx: Context) -> None:
+    with pytest.raises(ValueError, match="cmd must not be empty"):
+        ctx.sh(name="bad", cmd=[])
+
+
 def test_db_path(tmp_path: Path) -> None:
     with Context(project_root=tmp_path) as ctx:
         assert ctx.db_path == tmp_path / ".cook" / "store.db"
