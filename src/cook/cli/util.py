@@ -219,8 +219,7 @@ def print_task_detail(
     # Command (for ShellTask)
     if isinstance(task, ShellTask) and task.cmd:
         cmd_str = task.cmd if isinstance(task.cmd, str) else shlex.join(task.cmd)
-        cmd_display = cmd_str if len(cmd_str) <= 80 else cmd_str[:77] + "..."
-        print(f"    cmd: {cmd_display}")
+        print(f"    cmd: {cmd_str}")
 
     # Execution history from store
     if record is not None:
