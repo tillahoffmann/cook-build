@@ -40,6 +40,23 @@ def test_exec_basic(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert outfile.read_text().strip() == "hello"
 
 
+def test_exec_shows_cooking(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    outfile = project / "out.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="hello", cmd="echo hello > {outfile}", outputs=["{outfile}"])
+        """,
+    )
+    rc = main(["run", "hello"])
+    assert rc == 0
+    captured = capsys.readouterr().err
+    assert "Cooking" in captured
+    assert "hello" in captured
+
+
 def test_exec_pattern_matching(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

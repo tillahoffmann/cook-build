@@ -162,6 +162,36 @@ def test_output_error(capsys: pytest.CaptureFixture[str]):
     assert "error: something broke" in err
 
 
+def test_output_task_cooking(capsys: pytest.CaptureFixture[str]):
+    ui = Output(color=False)
+    ui.set_total(5)
+    ui.task_cooking("build")
+    err = capsys.readouterr().err
+    assert "Cooking" in err
+    assert "build" in err
+
+
+def test_output_task_cooking_does_not_increment_counter(
+    capsys: pytest.CaptureFixture[str],
+):
+    ui = Output(color=False)
+    ui.set_total(3)
+    ui.task_cooking("step-a")
+    capsys.readouterr()
+    ui.task_cooked("step-a", 1.0)
+    err = capsys.readouterr().err
+    # Cooking should not have consumed a counter slot; cooked should be [1/3]
+    assert "[1/3]" in err
+
+
+def test_output_task_cooking_quiet_suppressed(capsys: pytest.CaptureFixture[str]):
+    ui = Output(verbosity=Verbosity.QUIET, color=False)
+    ui.set_total(1)
+    ui.task_cooking("t")
+    err = capsys.readouterr().err
+    assert err == ""
+
+
 def test_output_status(capsys: pytest.CaptureFixture[str]):
     ui = Output(color=False)
     ui.status("hello")
