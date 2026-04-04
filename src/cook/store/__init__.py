@@ -6,6 +6,10 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..resource import Resource
 
 
 @dataclass
@@ -65,6 +69,7 @@ class FileDigestCache:
 
     def __init__(self) -> None:
         self._cache: dict[Path, tuple[int, bytes]] = {}
+        self._remote_cache: dict[str, bytes] = {}
 
     def hash_file(self, path: Path) -> bytes:
         resolved = path.resolve()
@@ -76,6 +81,19 @@ class FileDigestCache:
         content_hash = hashlib.sha256(data).digest()
         self._cache[resolved] = (mtime_ns, content_hash)
         return content_hash
+
+    def hash_resource(self, resource: Resource) -> bytes:
+        from ..resource import FileResource
+
+        if isinstance(resource, FileResource):
+            return self.hash_file(resource.path)
+        label = resource.label
+        cached = self._remote_cache.get(label)
+        if cached is not None:
+            return cached
+        digest = resource.digest()
+        self._remote_cache[label] = digest
+        return digest
 
 
 class BuildStore(ABC):

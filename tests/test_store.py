@@ -272,3 +272,20 @@ def test_file_cache_missing_file(tmp_path: Path) -> None:
     cache = FileDigestCache()
     with pytest.raises(FileNotFoundError):
         cache.hash_file(tmp_path / "gone.txt")
+
+
+def test_hash_resource_caches_gcs_resources(gcs_bucket) -> None:  # type: ignore[no-untyped-def]
+    """hash_resource should cache digest results for GCS resources."""
+    import hashlib
+
+    from cook.resource import GcsResource
+
+    gcs_bucket.blob("cached.txt").upload_from_string(b"cache me")
+
+    cache = FileDigestCache()
+    resource = GcsResource(bucket=gcs_bucket.name, object_key="cached.txt")
+
+    h1 = cache.hash_resource(resource)
+    h2 = cache.hash_resource(resource)
+    assert h1 == h2 == hashlib.md5(b"cache me").digest()
+    assert resource.label in cache._remote_cache  # cached
