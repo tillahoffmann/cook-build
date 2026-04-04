@@ -13,7 +13,7 @@ from pathlib import Path
 from ..config import Config
 from ..context import Context
 from ..executor import get_executor
-from ..scheduler import Scheduler, is_stale
+from ..scheduler import Scheduler, StalenessChecker
 from ..store import FileDigestCache, TaskRecord
 from ..store.sqlite import SqliteBuildStore
 from ..task import ShellTask, Task
@@ -136,17 +136,12 @@ def run_targets(
         all_tasks = collect_transitive(targets)
         db_path = ctx.db_path
         if db_path.exists():
-            cache = FileDigestCache()
-            stale_memo: dict[str, bool] = {}
             with SqliteBuildStore(str(db_path)) as store:
+                checker = StalenessChecker(
+                    store, FileDigestCache(), project_root=ctx.project_root
+                )
                 for task in all_tasks:
-                    stale = is_stale(
-                        task,
-                        store,
-                        cache,
-                        _memo=stale_memo,
-                        project_root=ctx.project_root,
-                    )
+                    stale = checker.is_stale(task)
                     status = "STALE (would run)" if stale else "up-to-date"
                     print(f"[{task.name}] {status}", file=sys.stderr)
         else:

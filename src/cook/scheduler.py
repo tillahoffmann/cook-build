@@ -53,53 +53,173 @@ def _task_name_from_error(e: Exception) -> str:
     return str(e)
 
 
+class StalenessChecker:
+    """Check task staleness with memoized results.
+
+    Caches is_stale and staleness_reason results per task to avoid
+    exponential re-traversal on diamond DAGs.
+    """
+
+    def __init__(
+        self,
+        store: BuildStore,
+        file_cache: FileDigestCache | None = None,
+        *,
+        project_root: Path | None = None,
+    ) -> None:
+        self._store = store
+        self._file_cache = file_cache
+        self._root = project_root or Path.cwd()
+        self._stale_memo: dict[str, bool] = {}
+        self._reason_memo: dict[str, str | None] = {}
+
+    def compute_effective_digest(self, task: Task) -> str | None:
+        """Compute the effective digest for a task.
+
+        Returns None if the task has no outputs or if any dependency
+        propagates None (e.g. a dep with no outputs).
+        """
+        if not task.outputs:
+            return None
+
+        root = self._root.resolve() if not self._root.is_absolute() else self._root
+
+        dep_digests: list[tuple[str, str]] = []
+        for dep in sorted(task.task_deps, key=lambda d: d.name):
+            if not dep.outputs:
+                return None
+            dep_record = self._store.get(dep.task_id)
+            if dep_record is None or dep_record.digest is None:
+                return None
+            dep_digests.append((dep.name, dep_record.digest))
+
+        h = hashlib.sha256()
+        h.update(task.digest().encode())
+
+        for fi in task.file_inputs:
+            resource = resolve_resource(fi, root)
+            try:
+                content_hash = (
+                    self._file_cache.hash_resource(resource)
+                    if self._file_cache is not None
+                    else resource.digest()
+                )
+            except FileNotFoundError as exc:
+                raise FileNotFoundError(
+                    f"Input file '{resource.label}' not found for task '{task.name}'"
+                ) from exc
+            h.update(resource.label.encode())
+            h.update(content_hash)
+
+        for _, digest in dep_digests:
+            h.update(digest.encode())
+
+        return h.hexdigest()
+
+    def is_stale(self, task: Task) -> bool:
+        """Return True if the task needs to run.
+
+        Results are memoized per task_id to avoid exponential re-checking
+        on diamond DAGs.
+        """
+        if task.task_id in self._stale_memo:
+            return self._stale_memo[task.task_id]
+
+        if not task.outputs:
+            self._stale_memo[task.task_id] = True
+            return True
+
+        for dep in task.task_deps:
+            if self.is_stale(dep):
+                self._stale_memo[task.task_id] = True
+                return True
+
+        try:
+            effective = self.compute_effective_digest(task)
+        except FileNotFoundError:
+            self._stale_memo[task.task_id] = True
+            return True
+        if effective is None:  # pragma: no cover
+            self._stale_memo[task.task_id] = True
+            return True
+
+        record = self._store.get(task.task_id)
+        if record is None or record.digest != effective:
+            self._stale_memo[task.task_id] = True
+            return True
+
+        result = not all(resolve_resource(o, self._root).exists() for o in task.outputs)
+        self._stale_memo[task.task_id] = result
+        return result
+
+    def staleness_reason(self, task: Task) -> str | None:
+        """Return a human-readable reason why a task is stale, or None."""
+        if task.task_id in self._reason_memo:
+            return self._reason_memo[task.task_id]
+
+        if not task.outputs:
+            self._reason_memo[task.task_id] = "always-run (no outputs)"
+            return self._reason_memo[task.task_id]
+
+        stale_deps = [
+            dep.name for dep in task.task_deps if self.staleness_reason(dep) is not None
+        ]
+        if stale_deps:
+            n = len(stale_deps)
+            result = f"{n} {'dependency is' if n == 1 else 'dependencies are'} stale"
+            self._reason_memo[task.task_id] = result
+            return result
+
+        record = self._store.get(task.task_id)
+        if record is None:
+            self._reason_memo[task.task_id] = "never run"
+            return self._reason_memo[task.task_id]
+
+        try:
+            effective = self.compute_effective_digest(task)
+        except FileNotFoundError:
+            missing_inputs = [
+                str(f)
+                for f in task.file_inputs
+                if not resolve_resource(f, self._root).exists()
+            ]
+            n = len(missing_inputs)
+            result = f"{n} {'input is' if n == 1 else 'inputs are'} missing"
+            self._reason_memo[task.task_id] = result
+            return result
+        if effective is None:
+            self._reason_memo[task.task_id] = (
+                "always-run dependency"  # pragma: no cover
+            )
+            return self._reason_memo[task.task_id]  # pragma: no cover
+
+        if record.digest != effective:
+            self._reason_memo[task.task_id] = "digest changed"
+            return self._reason_memo[task.task_id]
+
+        missing_outputs = [
+            o for o in task.outputs if not resolve_resource(o, self._root).exists()
+        ]
+        if missing_outputs:
+            n = len(missing_outputs)
+            result = f"{n} {'output is' if n == 1 else 'outputs are'} missing"
+            self._reason_memo[task.task_id] = result
+            return result
+
+        self._reason_memo[task.task_id] = None
+        return None
+
+
 def compute_effective_digest(
     task: Task,
     store: BuildStore,
     file_cache: FileDigestCache | None = None,
     project_root: Path | None = None,
 ) -> str | None:
-    """Compute the effective digest for a task given a store.
-
-    Returns None if the task has no outputs or if any dependency
-    propagates None (e.g. a dep with no outputs).
-    """
-    if not task.outputs:
-        return None
-
-    root = (project_root or Path.cwd()).resolve()
-
-    dep_digests: list[tuple[str, str]] = []
-    for dep in sorted(task.task_deps, key=lambda d: d.name):
-        if not dep.outputs:
-            return None
-        dep_record = store.get(dep.task_id)
-        if dep_record is None or dep_record.digest is None:
-            return None
-        dep_digests.append((dep.name, dep_record.digest))
-
-    h = hashlib.sha256()
-    h.update(task.digest().encode())
-
-    for fi in task.file_inputs:
-        resource = resolve_resource(fi, root)
-        try:
-            content_hash = (
-                file_cache.hash_resource(resource)
-                if file_cache is not None
-                else resource.digest()
-            )
-        except FileNotFoundError as exc:
-            raise FileNotFoundError(
-                f"Input file '{resource.label}' not found for task '{task.name}'"
-            ) from exc
-        h.update(resource.label.encode())
-        h.update(content_hash)
-
-    for _, digest in dep_digests:
-        h.update(digest.encode())
-
-    return h.hexdigest()
+    """Convenience wrapper around StalenessChecker.compute_effective_digest."""
+    return StalenessChecker(
+        store, file_cache, project_root=project_root
+    ).compute_effective_digest(task)
 
 
 def is_stale(
@@ -107,55 +227,10 @@ def is_stale(
     store: BuildStore,
     file_cache: FileDigestCache | None = None,
     *,
-    _memo: dict[str, bool] | None = None,
     project_root: Path | None = None,
 ) -> bool:
-    """Return True if the task needs to run.
-
-    A task is stale if:
-    - it has no outputs (always-run)
-    - any dependency is stale
-    - no stored record exists
-    - any output file is missing
-    - the effective digest doesn't match the stored one
-
-    Results are memoized per task_id to avoid exponential re-checking
-    on diamond DAGs.
-    """
-    root = project_root or Path.cwd()
-    if _memo is None:
-        _memo = {}
-    if task.task_id in _memo:
-        return _memo[task.task_id]
-
-    if not task.outputs:
-        _memo[task.task_id] = True
-        return True
-
-    for dep in task.task_deps:
-        if is_stale(dep, store, file_cache, _memo=_memo, project_root=root):
-            _memo[task.task_id] = True
-            return True
-
-    try:
-        effective = compute_effective_digest(task, store, file_cache, root)
-    except FileNotFoundError:
-        _memo[task.task_id] = True
-        return True
-    if effective is None:  # pragma: no cover
-        # A dependency has no outputs or no stored record despite passing
-        # recursive staleness checks — conservatively treat as stale.
-        _memo[task.task_id] = True
-        return True
-
-    record = store.get(task.task_id)
-    if record is None or record.digest != effective:
-        _memo[task.task_id] = True
-        return True
-
-    result = not all(resolve_resource(o, root).exists() for o in task.outputs)
-    _memo[task.task_id] = result
-    return result
+    """Convenience wrapper around StalenessChecker.is_stale."""
+    return StalenessChecker(store, file_cache, project_root=project_root).is_stale(task)
 
 
 def staleness_reason(
@@ -164,65 +239,11 @@ def staleness_reason(
     file_cache: FileDigestCache | None = None,
     *,
     project_root: Path | None = None,
-    _memo: dict[str, str | None] | None = None,
 ) -> str | None:
-    """Return a human-readable reason why a task is stale, or None if up-to-date."""
-    root = project_root or Path.cwd()
-    if _memo is None:
-        _memo = {}
-    if task.task_id in _memo:
-        return _memo[task.task_id]
-
-    if not task.outputs:
-        _memo[task.task_id] = "always-run (no outputs)"
-        return _memo[task.task_id]
-
-    stale_deps = [
-        dep.name
-        for dep in task.task_deps
-        if staleness_reason(dep, store, file_cache, project_root=root, _memo=_memo)
-        is not None
-    ]
-    if stale_deps:
-        n = len(stale_deps)
-        result = f"{n} {'dependency is' if n == 1 else 'dependencies are'} stale"
-        _memo[task.task_id] = result
-        return result
-
-    record = store.get(task.task_id)
-    if record is None:
-        _memo[task.task_id] = "never run"
-        return _memo[task.task_id]
-
-    try:
-        effective = compute_effective_digest(task, store, file_cache, root)
-    except FileNotFoundError:
-        missing_inputs = [
-            str(f) for f in task.file_inputs if not resolve_resource(f, root).exists()
-        ]
-        n = len(missing_inputs)
-        result = f"{n} {'input is' if n == 1 else 'inputs are'} missing"
-        _memo[task.task_id] = result
-        return result
-    if effective is None:
-        _memo[task.task_id] = "always-run dependency"  # pragma: no cover
-        return _memo[task.task_id]  # pragma: no cover
-
-    if record.digest != effective:
-        _memo[task.task_id] = "digest changed"
-        return _memo[task.task_id]
-
-    missing_outputs = [
-        o for o in task.outputs if not resolve_resource(o, root).exists()
-    ]
-    if missing_outputs:
-        n = len(missing_outputs)
-        result = f"{n} {'output is' if n == 1 else 'outputs are'} missing"
-        _memo[task.task_id] = result
-        return result
-
-    _memo[task.task_id] = None
-    return None
+    """Convenience wrapper around StalenessChecker.staleness_reason."""
+    return StalenessChecker(
+        store, file_cache, project_root=project_root
+    ).staleness_reason(task)
 
 
 class Scheduler:

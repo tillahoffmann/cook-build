@@ -4,7 +4,7 @@ import argparse
 
 from ..config import Config
 from ..context import Context
-from ..scheduler import compute_effective_digest
+from ..scheduler import StalenessChecker
 from ..store import TaskRecord
 from ..store.sqlite import SqliteBuildStore
 from ..transform import collect_transitive
@@ -40,10 +40,9 @@ def cmd_validate(
         return 0
 
     with SqliteBuildStore(str(ctx.db_path)) as store:
+        checker = StalenessChecker(store, project_root=ctx.project_root)
         for task in validatable:
-            effective = compute_effective_digest(
-                task, store, project_root=ctx.project_root
-            )
+            effective = checker.compute_effective_digest(task)
             if effective is None:
                 ui.status(f"[{task.name}] skipped (always-run dependency)")
                 continue
