@@ -664,6 +664,112 @@ def test_exit_code_failure(project: Path) -> None:
     assert main(["run", "fail"]) == 1
 
 
+def test_directory_input_error_run(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Using a directory as a file input should produce a clear error, not a traceback."""
+    subdir = project / "subdir"
+    subdir.mkdir()
+    outfile = project / "out.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="bad-task", cmd="echo hi", inputs=["{subdir}"], outputs=["{outfile}"])
+        """,
+    )
+    rc = main(["run", "bad-task"])
+    assert rc == 1
+    captured = capsys.readouterr().err
+    assert "bad-task" in captured
+    assert "subdir" in captured
+    assert "Traceback" not in captured
+
+
+def test_directory_input_error_inspect(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Inspect with a directory input should show a clear reason, not crash."""
+    infile = project / "src.txt"
+    infile.write_text("data")
+    outfile = project / "out.txt"
+    # First, run successfully with a normal file input.
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="task", cmd="cat {infile} > {outfile}", inputs=["{infile}"], outputs=["{outfile}"])
+        """,
+    )
+    rc = main(["run", "task"])
+    assert rc == 0
+    capsys.readouterr()
+
+    # Now replace the file input with a directory so staleness_reason hits
+    # compute_effective_digest and encounters IsADirectoryError.
+    infile.unlink()
+    infile.mkdir()
+    rc = main(["inspect", "task"])
+    assert rc == 1
+    captured = capsys.readouterr().err
+    assert "task" in captured
+    assert "src.txt" in captured
+    assert "Is a directory" in captured
+    assert "Traceback" not in captured
+
+
+def test_unreadable_input_error_run(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Permission-denied on an input file should produce a clear error."""
+    secret = project / "secret.txt"
+    secret.write_text("data")
+    secret.chmod(0o000)
+    outfile = project / "out.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="bad-task", cmd="echo hi", inputs=["{secret}"], outputs=["{outfile}"])
+        """,
+    )
+    try:
+        rc = main(["run", "bad-task"])
+        assert rc == 1
+        captured = capsys.readouterr().err
+        assert "bad-task" in captured
+        assert "secret.txt" in captured
+        assert "Traceback" not in captured
+    finally:
+        secret.chmod(0o644)
+
+
+def test_symlink_loop_input_error_run(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A symlink loop as input should produce a clear error."""
+    loop = project / "loop"
+    loop.symlink_to(loop)
+    outfile = project / "out.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="bad-task", cmd="echo hi", inputs=["{loop}"], outputs=["{outfile}"])
+        """,
+    )
+    rc = main(["run", "bad-task"])
+    assert rc == 1
+    captured = capsys.readouterr().err
+    assert "bad-task" in captured
+    assert "loop" in captured
+    assert "Traceback" not in captured
+
+
 def test_no_subcommand(capsys: pytest.CaptureFixture[str]) -> None:
     rc = main([])
     assert rc == 1
