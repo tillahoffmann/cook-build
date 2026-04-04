@@ -163,8 +163,10 @@ class _UIHandler(SimpleHTTPRequestHandler):
     ctx: Context
     config_data: dict[str, object]
     static_dir: Path | None
-    _cache: dict[str, object] = {}
-    _cache_tag: object = None  # sentinel for cache invalidation
+    _cached_tasks: list[dict[str, object]] = []
+    _cached_edges: list[dict[str, str]] = []
+    _cached_detail: dict[str, tuple[bool, str | None, TaskRecord | None]] = {}
+    _last_modified: tuple[bool, float] | None = None
 
     def _get_graph_data(
         self,
@@ -174,23 +176,21 @@ class _UIHandler(SimpleHTTPRequestHandler):
         dict[str, tuple[bool, str | None, TaskRecord | None]],
     ]:
         """Return cached graph data, recomputing when the store changes."""
-        tag = self._db_tag()
-        if tag != _UIHandler._cache_tag:
+        modified = self._db_modified()
+        if modified != _UIHandler._last_modified:
             tasks_api, edges, detail_cache = _build_graph_data(self.ctx)
-            _UIHandler._cache = {
-                "tasks": tasks_api,
-                "edges": edges,
-                "detail": detail_cache,
-            }
-            _UIHandler._cache_tag = tag
+            _UIHandler._cached_tasks = tasks_api
+            _UIHandler._cached_edges = edges
+            _UIHandler._cached_detail = detail_cache
+            _UIHandler._last_modified = modified
 
         return (
-            _UIHandler._cache["tasks"],  # type: ignore[return-value]
-            _UIHandler._cache["edges"],  # type: ignore[return-value]
-            _UIHandler._cache["detail"],  # type: ignore[return-value]
+            _UIHandler._cached_tasks,
+            _UIHandler._cached_edges,
+            _UIHandler._cached_detail,
         )
 
-    def _db_tag(self) -> tuple[bool, float]:
+    def _db_modified(self) -> tuple[bool, float]:
         """Return (exists, mtime) for cache invalidation.
 
         Checks both the main db and WAL file — WAL mode writes to
@@ -222,7 +222,7 @@ class _UIHandler(SimpleHTTPRequestHandler):
 
     def _handle_api_data(self, path: str) -> None:
         """Handle /api/tasks or /api/edges with conditional caching."""
-        exists, mtime = self._db_tag()
+        exists, mtime = self._db_modified()
         if exists and self._is_not_modified(mtime):
             self.send_response(304)
             self.end_headers()

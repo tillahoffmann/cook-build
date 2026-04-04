@@ -6,10 +6,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from ..resource import Resource
+from ..resource import FileResource, Resource
 
 
 @dataclass
@@ -83,8 +81,6 @@ class FileDigestCache:
         return content_hash
 
     def hash_resource(self, resource: Resource) -> bytes:
-        from ..resource import FileResource
-
         if isinstance(resource, FileResource):
             return self.hash_file(resource.path)
         label = resource.label

@@ -53,8 +53,10 @@ def ui_server() -> Generator[
     for s in servers:
         s.shutdown()
     # Reset class-level cache to prevent cross-test contamination
-    _UIHandler._cache = {}
-    _UIHandler._cache_tag = None
+    _UIHandler._cached_tasks = []
+    _UIHandler._cached_edges = []
+    _UIHandler._cached_detail = {}
+    _UIHandler._last_modified = None
 
 
 @pytest.fixture
