@@ -231,6 +231,28 @@ def test_inspect(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert "deps: step-a" in captured
 
 
+def test_inspect_only_shows_matched_targets(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Inspect should only show matched targets, not their transitive deps."""
+    out_a = project / "a.txt"
+    out_b = project / "b.txt"
+    _write_recipe(
+        project,
+        f"""\
+        from cook import get_context
+        ctx = get_context()
+        a = ctx.sh(name="step-a", cmd="echo a > {out_a}", outputs=["{out_a}"])
+        ctx.sh(name="step-b", cmd="echo b > {out_b}", inputs=[a], outputs=["{out_b}"])
+        """,
+    )
+    rc = main(["inspect", "step-b"])
+    assert rc == 0
+    captured = capsys.readouterr().out
+    assert "[step-b]" in captured
+    assert "[step-a]" not in captured
+
+
 def test_inspect_shows_never_run(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
