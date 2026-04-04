@@ -75,8 +75,11 @@ class FileDigestCache:
         cached = self._cache.get(resolved)
         if cached is not None and cached[0] == mtime_ns:
             return cached[1]
-        data = resolved.read_bytes()
-        content_hash = hashlib.sha256(data).digest()
+        h = hashlib.sha256()
+        with resolved.open("rb") as f:
+            while block := f.read(1024 * 1024):
+                h.update(block)
+        content_hash = h.digest()
         self._cache[resolved] = (mtime_ns, content_hash)
         return content_hash
 
