@@ -79,7 +79,7 @@ class Task:
 
 @dataclass(eq=False)
 class ShellTask(Task):
-    cmd: str | Sequence[str] = ""
+    cmd: str | Sequence[Any] = ""
     env: dict[str, str] | None = None
     cwd: str | None = None
 
@@ -93,6 +93,7 @@ class ShellTask(Task):
         else:
             if not self.cmd:
                 raise ValueError(f"ShellTask {self.name!r}: cmd must not be empty.")
+            self.cmd = [str(arg) for arg in self.cmd]
 
 
 @dataclass(eq=False)

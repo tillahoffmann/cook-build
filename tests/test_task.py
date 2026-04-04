@@ -288,3 +288,9 @@ def test_shelltask_cmd_sequence_digest_differs_from_str() -> None:
     t1 = ShellTask(name="a", cmd="echo hello")
     t2 = ShellTask(name="a", cmd=["echo", "hello"])
     assert t1.digest() != t2.digest()
+
+
+def test_shelltask_cmd_sequence_coerces_to_str() -> None:
+    t = ShellTask(name="a", cmd=["gcc", Path("main.c"), 42])
+    assert t.cmd == ["gcc", "main.c", "42"]
+    assert all(isinstance(arg, str) for arg in t.cmd)

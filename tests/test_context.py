@@ -319,6 +319,11 @@ def test_sh_cmd_sequence_empty_raises(ctx: Context) -> None:
         ctx.sh(name="bad", cmd=[])
 
 
+def test_sh_cmd_sequence_coerces_non_str(ctx: Context) -> None:
+    t = ctx.sh(name="build", cmd=["gcc", Path("main.c"), 42])
+    assert t.cmd == ["gcc", "main.c", "42"]
+
+
 def test_db_path(tmp_path: Path) -> None:
     with Context(project_root=tmp_path) as ctx:
         assert ctx.db_path == tmp_path / ".cook" / "store.db"

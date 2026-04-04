@@ -9,7 +9,7 @@ from .task import GroupTask, ShellTask, Task
 
 def sh(
     name: str,
-    cmd: str | Sequence[str],
+    cmd: str | Sequence[Any],
     *,
     inputs: Sequence[str | Path | Task] | None = None,
     outputs: Sequence[str | Path] | None = None,
