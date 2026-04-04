@@ -48,10 +48,9 @@ def check_outputs(
             seen_outputs[key] = task.name
 
     for task in tasks.values():
-        resolved_outputs = {_resolve_key(o, root) for o in task.outputs}
         for inp in task.file_inputs:
             resolved_inp = _resolve_key(inp, root)
-            if resolved_inp in resolved_outputs:
+            if seen_outputs.get(resolved_inp) == task.name:
                 raise ValueError(
                     f"Task {task.name!r} has {str(inp)!r} as both "
                     "an input and an output."
