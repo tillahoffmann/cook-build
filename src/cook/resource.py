@@ -61,9 +61,14 @@ class GcsResource:
     def digest(self) -> bytes:
         import base64
 
+        from google.api_core.exceptions import NotFound  # type: ignore[import-untyped]
+
         client = _get_gcs_client()
         blob = client.bucket(self.bucket).blob(self.object_key)
-        blob.reload()
+        try:
+            blob.reload()
+        except NotFound as exc:
+            raise FileNotFoundError(f"GCS object not found: {self.label}") from exc
         if blob.md5_hash is None:  # pragma: no cover
             raise ValueError(
                 f"GCS object {self.label} has no md5 hash. "
@@ -82,13 +87,19 @@ def resolve_resource(path: str | Path, project_root: Path | None = None) -> Reso
     s = str(path)
     parsed = urlparse(s)
     if parsed.scheme == "gs":
+        bucket = parsed.netloc
         object_key = parsed.path.lstrip("/")
+        if not bucket:
+            raise ValueError(
+                f"gs:// URL has empty bucket name: {s!r}. "
+                f"Expected format: gs://bucket/path/to/object"
+            )
         if not object_key:
             raise ValueError(
                 f"gs:// URL has empty object key: {s!r}. "
                 f"Expected format: gs://bucket/path/to/object"
             )
-        return GcsResource(bucket=parsed.netloc, object_key=object_key)
+        return GcsResource(bucket=bucket, object_key=object_key)
     if parsed.scheme and parsed.scheme != "file":
         raise ValueError(
             f"Unsupported URL scheme {parsed.scheme!r} in {s!r}. "

@@ -89,6 +89,11 @@ def test_resolve_resource_gs_bucket_only_rejected() -> None:
         resolve_resource("gs://bucket-only")
 
 
+def test_resolve_resource_gs_empty_bucket_rejected() -> None:
+    with pytest.raises(ValueError, match="empty bucket"):
+        resolve_resource("gs:///some/key")
+
+
 def test_resolve_resource_unsupported_scheme() -> None:
     with pytest.raises(ValueError, match="Unsupported URL scheme"):
         resolve_resource("ftp://example.com/file")
@@ -129,6 +134,12 @@ def test_gcs_resource_label() -> None:
 # ---------------------------------------------------------------------------
 # GcsResource integration tests (fake-gcs-server via conftest.py)
 # ---------------------------------------------------------------------------
+
+
+def test_gcs_resource_digest_not_found(gcs_bucket) -> None:  # type: ignore[no-untyped-def]
+    r = GcsResource(bucket=gcs_bucket.name, object_key="does-not-exist.txt")
+    with pytest.raises(FileNotFoundError, match="does-not-exist.txt"):
+        r.digest()
 
 
 def test_gcs_resource_digest(gcs_bucket) -> None:  # type: ignore[no-untyped-def]

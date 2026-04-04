@@ -227,6 +227,26 @@ def test_gcs_resource_exists_e2e(
     assert r2.exists()
 
 
+async def test_gcs_missing_input_clear_error(
+    tmp_path: Path,
+    gcs_bucket,  # type: ignore[no-untyped-def]
+    store: SqliteBuildStore,
+    executor: LocalExecutor,
+) -> None:
+    """A task with a non-existent gs:// input raises FileNotFoundError."""
+    outfile = tmp_path / "output.txt"
+    task = ShellTask(
+        name="missing-gcs",
+        cmd=f"echo x > {outfile}",
+        inputs=[f"gs://{gcs_bucket.name}/nonexistent.txt"],
+        outputs=[str(outfile)],
+    )
+
+    sched = Scheduler(store, executor, project_root=tmp_path)
+    with pytest.raises(FileNotFoundError, match="nonexistent.txt"):
+        await sched.run([task])
+
+
 def test_gcs_resource_digest_e2e(
     gcs_bucket,  # type: ignore[no-untyped-def]
 ) -> None:
