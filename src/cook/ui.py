@@ -84,6 +84,14 @@ class Output:
         action = self.style.cyan("Fresh")
         print(f"{counter} {action}   {name}", file=sys.stderr)
 
+    def task_cooking(self, name: str) -> None:
+        if self.verbosity < Verbosity.NORMAL:
+            return
+        width = len(str(self._total))
+        pad = " " * (2 * width + 3)  # matches "[N/M]" width
+        action = self.style.yellow("Cooking")
+        print(f"{pad} {action} {name}", file=sys.stderr)
+
     def task_cooked(self, name: str, elapsed: float) -> None:
         if self.verbosity < Verbosity.NORMAL:
             return

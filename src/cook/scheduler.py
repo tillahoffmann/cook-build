@@ -410,6 +410,7 @@ class Scheduler:
             nonlocal started_at
             started_at = datetime.now(timezone.utc)
             self._store.update_run_status(run_id, "running")
+            self._ui.task_cooking(task.name)
 
         try:
             await self._executor.execute(task, on_start=on_start)
