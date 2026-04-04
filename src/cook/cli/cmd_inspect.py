@@ -9,7 +9,6 @@ from ..scheduler import StalenessChecker
 from ..store import FileDigestCache, TaskRecord
 from ..store.sqlite import SqliteBuildStore
 from ..task import ShellTask, Task
-from ..transform import collect_transitive
 from ..ui import Output
 from .util import match_targets, print_task_detail
 
@@ -51,14 +50,13 @@ def cmd_inspect(
     targets = match_targets(ctx.tasks, args.pattern, config.default, args.regex)
     use_json = args.json
 
-    all_tasks = collect_transitive(targets)
     db_path = ctx.db_path
     if db_path.exists():
         with SqliteBuildStore(str(db_path)) as store:
             checker = StalenessChecker(
                 store, FileDigestCache(), project_root=ctx.project_root
             )
-            for task in all_tasks:
+            for task in targets:
                 stale = checker.is_stale(task)
                 reason = checker.staleness_reason(task)
                 record = store.get(task.task_id)
@@ -67,7 +65,7 @@ def cmd_inspect(
                 else:
                     print_task_detail(task, stale, record, ui, reason)
     else:
-        for task in all_tasks:
+        for task in targets:
             reason = "never run" if task.outputs else "always-run (no outputs)"
             if use_json:
                 print(json.dumps(_task_to_dict(task, True, None, reason)))
