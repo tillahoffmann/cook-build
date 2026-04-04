@@ -44,7 +44,7 @@ class Context:
     def sh(
         self,
         name: str,
-        cmd: str | Sequence[str],
+        cmd: str | Sequence[Any],
         *,
         inputs: Sequence[str | Path | Task] | None = None,
         outputs: Sequence[str | Path] | None = None,
