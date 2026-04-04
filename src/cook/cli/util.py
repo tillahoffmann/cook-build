@@ -137,9 +137,16 @@ def run_targets(
         db_path = ctx.db_path
         if db_path.exists():
             cache = FileDigestCache()
+            stale_memo: dict[str, bool] = {}
             with SqliteBuildStore(str(db_path)) as store:
                 for task in all_tasks:
-                    stale = is_stale(task, store, cache, project_root=ctx.project_root)
+                    stale = is_stale(
+                        task,
+                        store,
+                        cache,
+                        _memo=stale_memo,
+                        project_root=ctx.project_root,
+                    )
                     status = "STALE (would run)" if stale else "up-to-date"
                     print(f"[{task.name}] {status}", file=sys.stderr)
         else:

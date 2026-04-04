@@ -106,6 +106,7 @@ def is_stale(
     task: Task,
     store: BuildStore,
     file_cache: FileDigestCache | None = None,
+    *,
     _memo: dict[str, bool] | None = None,
     project_root: Path | None = None,
 ) -> bool:
@@ -132,7 +133,7 @@ def is_stale(
         return True
 
     for dep in task.task_deps:
-        if is_stale(dep, store, file_cache, _memo, root):
+        if is_stale(dep, store, file_cache, _memo=_memo, project_root=root):
             _memo[task.task_id] = True
             return True
 
@@ -161,26 +162,37 @@ def staleness_reason(
     task: Task,
     store: BuildStore,
     file_cache: FileDigestCache | None = None,
+    *,
     project_root: Path | None = None,
+    _memo: dict[str, str | None] | None = None,
 ) -> str | None:
     """Return a human-readable reason why a task is stale, or None if up-to-date."""
     root = project_root or Path.cwd()
+    if _memo is None:
+        _memo = {}
+    if task.task_id in _memo:
+        return _memo[task.task_id]
 
     if not task.outputs:
-        return "always-run (no outputs)"
+        _memo[task.task_id] = "always-run (no outputs)"
+        return _memo[task.task_id]
 
     stale_deps = [
         dep.name
         for dep in task.task_deps
-        if staleness_reason(dep, store, file_cache, root) is not None
+        if staleness_reason(dep, store, file_cache, project_root=root, _memo=_memo)
+        is not None
     ]
     if stale_deps:
         n = len(stale_deps)
-        return f"{n} {'dependency is' if n == 1 else 'dependencies are'} stale"
+        result = f"{n} {'dependency is' if n == 1 else 'dependencies are'} stale"
+        _memo[task.task_id] = result
+        return result
 
     record = store.get(task.task_id)
     if record is None:
-        return "never run"
+        _memo[task.task_id] = "never run"
+        return _memo[task.task_id]
 
     try:
         effective = compute_effective_digest(task, store, file_cache, root)
@@ -189,20 +201,27 @@ def staleness_reason(
             str(f) for f in task.file_inputs if not resolve_resource(f, root).exists()
         ]
         n = len(missing_inputs)
-        return f"{n} {'input is' if n == 1 else 'inputs are'} missing"
+        result = f"{n} {'input is' if n == 1 else 'inputs are'} missing"
+        _memo[task.task_id] = result
+        return result
     if effective is None:
-        return "always-run dependency"  # pragma: no cover
+        _memo[task.task_id] = "always-run dependency"  # pragma: no cover
+        return _memo[task.task_id]  # pragma: no cover
 
     if record.digest != effective:
-        return "digest changed"
+        _memo[task.task_id] = "digest changed"
+        return _memo[task.task_id]
 
     missing_outputs = [
         o for o in task.outputs if not resolve_resource(o, root).exists()
     ]
     if missing_outputs:
         n = len(missing_outputs)
-        return f"{n} {'output is' if n == 1 else 'outputs are'} missing"
+        result = f"{n} {'output is' if n == 1 else 'outputs are'} missing"
+        _memo[task.task_id] = result
+        return result
 
+    _memo[task.task_id] = None
     return None
 
 

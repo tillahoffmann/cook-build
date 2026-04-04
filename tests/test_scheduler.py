@@ -13,6 +13,7 @@ from cook.scheduler import (
     TaskOutputError,
     compute_effective_digest,
     is_stale,
+    staleness_reason,
 )
 from cook.store import TaskRecord
 from cook.store.sqlite import SqliteBuildStore
@@ -936,3 +937,12 @@ async def test_fresh_task_no_pending_residue(
 
     # Fresh task should not add a new run
     assert runs_after_second == runs_after_first
+
+
+def test_staleness_reason_without_memo(tmp_path: Path) -> None:
+    """staleness_reason works without passing _memo (creates its own)."""
+    store = SqliteBuildStore(str(tmp_path / "store.db"))
+    task = ShellTask(name="t", cmd="true", outputs=["out.txt"])
+    reason = staleness_reason(task, store, project_root=tmp_path)
+    assert reason == "never run"
+    store.close()

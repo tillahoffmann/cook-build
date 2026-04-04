@@ -84,10 +84,24 @@ def _build_graph_data(
     db_path = ctx.db_path
     if db_path.exists():
         cache = FileDigestCache()
+        stale_memo: dict[str, bool] = {}
+        reason_memo: dict[str, str | None] = {}
         with SqliteBuildStore(str(db_path)) as store:
             for task in all_transitive:
-                stale = is_stale(task, store, cache, project_root=ctx.project_root)
-                reason = staleness_reason(task, store, cache, ctx.project_root)
+                stale = is_stale(
+                    task,
+                    store,
+                    cache,
+                    _memo=stale_memo,
+                    project_root=ctx.project_root,
+                )
+                reason = staleness_reason(
+                    task,
+                    store,
+                    cache,
+                    project_root=ctx.project_root,
+                    _memo=reason_memo,
+                )
                 record = store.get(task.task_id)
                 api_dict = _task_to_api_dict(task, stale, reason, ctx)
                 # Check if task is pending or running
