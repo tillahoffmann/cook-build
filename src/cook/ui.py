@@ -5,6 +5,15 @@ import sys
 from enum import IntEnum
 
 
+def format_duration(seconds: float) -> str:
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    total = int(seconds)
+    if total < 3600:
+        return f"{total // 60}m {total % 60}s"
+    return f"{total // 3600}h {total % 3600 // 60}m"
+
+
 class Verbosity(IntEnum):
     QUIET = 0
     NORMAL = 1
@@ -97,14 +106,14 @@ class Output:
             return
         counter = self._counter()
         action = self.style.green("Cooked")
-        timing = self.style.dim(f"({elapsed:.1f}s)")
+        timing = self.style.dim(f"({format_duration(elapsed)})")
         print(f"{counter} {action}  {name} {timing}", file=sys.stderr)
 
     def task_failed(self, name: str, elapsed: float, message: str) -> None:
         # Always show failures, even in quiet mode
         counter = self._counter()
         action = self.style.red("FAILED")
-        timing = self.style.dim(f"({elapsed:.1f}s)")
+        timing = self.style.dim(f"({format_duration(elapsed)})")
         print(f"{counter} {action}  {name} {timing}", file=sys.stderr)
         for line in message.splitlines():
             print(f"         {line}", file=sys.stderr)
@@ -136,7 +145,7 @@ class Output:
             parts.append(self.style.red(f"{failed} failed"))
 
         summary = ", ".join(parts)
-        timing = self.style.dim(f"in {elapsed:.1f}s")
+        timing = self.style.dim(f"in {format_duration(elapsed)}")
 
         if failed:
             status = self.style.red("Build failed")

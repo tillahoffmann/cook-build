@@ -76,6 +76,21 @@ def test_output_task_cooked(capsys: pytest.CaptureFixture[str]):
     assert "(1.5s)" in err
 
 
+def test_output_task_cooked_long_duration(capsys: pytest.CaptureFixture[str]):
+    ui = Output(color=False)
+    ui.set_total(1)
+    ui.task_cooked("slow", 5400.0)
+    err = capsys.readouterr().err
+    assert "(1h 30m)" in err
+
+
+def test_output_summary_long_duration(capsys: pytest.CaptureFixture[str]):
+    ui = Output(color=False)
+    ui.summary(cooked=1, fresh=0, failed=0, skipped=0, elapsed=135.0)
+    err = capsys.readouterr().err
+    assert "in 2m 15s" in err
+
+
 def test_output_task_failed(capsys: pytest.CaptureFixture[str]):
     ui = Output(color=False)
     ui.set_total(1)

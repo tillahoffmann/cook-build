@@ -186,8 +186,8 @@ def format_relative_time(dt: datetime) -> str:
     hours = minutes // 60
     if hours < 24:
         return f"{hours}h ago"
-    days = hours // 24
-    return f"{days}d ago"
+    local = dt.astimezone()
+    return local.strftime("%b %-d, %H:%M")
 
 
 def print_task_detail(

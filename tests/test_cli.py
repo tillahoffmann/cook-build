@@ -491,7 +491,25 @@ def test_format_relative_time() -> None:
     assert "s ago" in format_relative_time(now - timedelta(seconds=30))
     assert "m ago" in format_relative_time(now - timedelta(minutes=5))
     assert "h ago" in format_relative_time(now - timedelta(hours=3))
-    assert "d ago" in format_relative_time(now - timedelta(days=2))
+    # Older than 24h: should show absolute date, not "d ago"
+    old = now - timedelta(days=2)
+    result = format_relative_time(old)
+    assert "ago" not in result
+    assert ":" in result  # contains a time like "17:30"
+
+
+def test_format_duration() -> None:
+    from cook.ui import format_duration
+
+    # Sub-minute: show seconds
+    assert format_duration(0.3) == "0.3s"
+    assert format_duration(45.0) == "45.0s"
+    # Minutes: show minutes and seconds
+    assert format_duration(135.0) == "2m 15s"
+    assert format_duration(60.0) == "1m 0s"
+    # Hours: show hours and minutes
+    assert format_duration(5400.0) == "1h 30m"
+    assert format_duration(3600.0) == "1h 0m"
 
 
 def test_inspect_shows_details(
