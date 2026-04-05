@@ -1,6 +1,6 @@
 [project]
 name = "cook-build"
-version = "1.2.0"
+version = "1.2.1"
 description = "A Python-native build system with content-hash-based incremental builds"
 readme = "README.md"
 requires-python = ">=3.11"
