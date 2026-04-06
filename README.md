@@ -1,5 +1,8 @@
 # 🧑‍🍳 Cook
 
+[![CI](https://github.com/tillahoffmann/cook-build/actions/workflows/main.yaml/badge.svg)](https://github.com/tillahoffmann/cook-build/actions/workflows/main.yaml)
+[![PyPI](https://img.shields.io/pypi/v/cook-build)](https://pypi.org/project/cook-build/)
+
 A Python-native build system with content-hash-based incremental builds. Define tasks in plain Python, and Cook handles dependency ordering, parallel execution, and skipping unchanged work.
 
 > [!WARNING]
