@@ -27,9 +27,22 @@ class Task:
     outputs: list[str | Path] = field(default_factory=list)
     extra: dict[str, Any] = field(default_factory=dict)
     _deps: set[Task] = field(default_factory=set, init=False, repr=False)
+    source_file: str | None = field(default=None, init=False, repr=False)
+    source_line: int | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         _validate_name(self.name)
+
+    @property
+    def source_location(self) -> str | None:
+        if self.source_file is not None and self.source_line is not None:
+            return f"{self.source_file}:{self.source_line}"
+        return None
+
+    @property
+    def label(self) -> str:
+        loc = self.source_location
+        return f"{self.name!r} ({loc})" if loc else repr(self.name)
 
     def __hash__(self) -> int:
         return id(self)
@@ -69,7 +82,7 @@ class Task:
             value = getattr(self, f.name)
             if f.name == "inputs":
                 value = [str(v) for v in value if not isinstance(v, Task)]
-            elif f.name == "_deps":
+            elif f.name in ("_deps", "source_file", "source_line"):
                 continue
             elif isinstance(value, list):
                 value = [str(v) for v in value]

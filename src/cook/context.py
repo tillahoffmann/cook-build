@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
@@ -9,6 +10,9 @@ from typing import Any, Self
 from .resource import FileResource, Resource, resolve_resource
 from .task import GroupTask, ShellTask, Task
 from .transform import DEFAULT_TRANSFORMS, GraphTransform
+
+_COOK_PACKAGE = str(Path(__file__).resolve().parent)
+_STDLIB_PREFIX = str(Path(contextmanager.__code__.co_filename).resolve().parent)
 
 _active_context: ContextVar[Context | None] = ContextVar(
     "_active_context", default=None
@@ -32,10 +36,28 @@ class Context:
         self._group_stack: list[GroupTask] = []
 
     def register(self, task: Task) -> Task:
+        # Capture declaration site: walk the stack past cook internals.
+        frame = sys._getframe(1)
+        while frame is not None:
+            filename = frame.f_code.co_filename
+            if not (
+                filename.startswith(_COOK_PACKAGE)
+                or filename.startswith(_STDLIB_PREFIX)
+            ):
+                task.source_file = filename
+                task.source_line = frame.f_lineno
+                break
+            frame = frame.f_back
         if task.name in self._tasks:
-            raise ValueError(
-                f"Duplicate task name {task.name!r}. Each task must have a unique name."
-            )
+            existing = self._tasks[task.name]
+            existing_loc = existing.source_location
+            new_loc = task.source_location
+            parts = [f"Task {task.name!r}: duplicate name"]
+            if existing_loc:
+                parts.append(f"originally at {existing_loc}")
+            if new_loc:
+                parts.append(f"redefined at {new_loc}")
+            raise ValueError(", ".join(parts))
         self._tasks[task.name] = task
         if self._group_stack and task is not self._group_stack[-1]:
             self._group_stack[-1]._deps.add(task)

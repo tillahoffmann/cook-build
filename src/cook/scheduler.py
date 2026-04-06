@@ -23,7 +23,7 @@ class TaskOutputError(Exception):
         self.missing = missing
         paths = ", ".join(missing)
         super().__init__(
-            f"Task {task.name!r} did not produce expected outputs: {paths}"
+            f"Task {task.label}: did not produce expected outputs: {paths}"
         )
 
 
@@ -32,7 +32,7 @@ class DependencyFailedError(Exception):
         self.task = task
         self.failed_dep = failed_dep
         super().__init__(
-            f"Task {task.name!r} skipped because dependency {failed_dep!r} failed"
+            f"Task {task.label}: skipped because dependency {failed_dep!r} failed"
         )
 
 
@@ -106,12 +106,11 @@ class StalenessChecker:
                 )
             except FileNotFoundError as exc:
                 raise FileNotFoundError(
-                    f"Input file '{resource.label}' not found for task '{task.name}'"
+                    f"Task {task.label}: input '{resource.label}' not found"
                 ) from exc
             except OSError as exc:
                 raise OSError(
-                    f"Cannot read input '{resource.label}' for task "
-                    f"'{task.name}': {exc}"
+                    f"Task {task.label}: cannot read input '{resource.label}': {exc}"
                 ) from exc
             h.update(resource.label.encode())
             h.update(content_hash)

@@ -45,7 +45,7 @@ def test_check_outputs_valid() -> None:
 def test_check_outputs_duplicate() -> None:
     a = Task(name="a", outputs=["out.o"])
     b = Task(name="b", outputs=["out.o"])
-    with pytest.raises(ValueError, match="Duplicate output path"):
+    with pytest.raises(ValueError, match="duplicate output"):
         CheckOutputsAndResolveFileDeps()(_tasks(a, b))
 
 
@@ -53,7 +53,7 @@ def test_check_outputs_duplicate_resolved(tmp_path: Path) -> None:
     p = str(tmp_path / "out.o")
     a = Task(name="a", outputs=[p])
     b = Task(name="b", outputs=[p])
-    with pytest.raises(ValueError, match="Duplicate output path"):
+    with pytest.raises(ValueError, match="duplicate output"):
         CheckOutputsAndResolveFileDeps()(_tasks(a, b))
 
 

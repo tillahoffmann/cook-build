@@ -20,7 +20,7 @@ class TaskExecutionError(Exception):
         self.stdout = stdout
         output = stderr or stdout
         super().__init__(
-            f"Task {task.name!r} failed with return code {returncode}:\n{output}"
+            f"Task {task.label}: failed with return code {returncode}:\n{output}"
         )
 
 

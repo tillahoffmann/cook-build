@@ -632,6 +632,64 @@ def test_keep_going(project: Path, capsys: pytest.CaptureFixture[str]) -> None:
     assert good_out.exists()
 
 
+def test_inspect_shows_source_location(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Inspect output should include where the task was declared."""
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="build", cmd="echo hi", outputs=["out.txt"])
+        """,
+    )
+    rc = main(["inspect", "build"])
+    assert rc == 0
+    captured = capsys.readouterr().out
+    assert "recipe.py:" in captured
+
+
+def test_inspect_json_shows_source_location(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """JSON inspect output should include source location."""
+    import json
+
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="build", cmd="echo hi", outputs=["out.txt"])
+        """,
+    )
+    rc = main(["inspect", "--json", "build"])
+    assert rc == 0
+    obj = json.loads(capsys.readouterr().out.strip())
+    assert "source" in obj
+    assert "recipe.py" in obj["source"]
+
+
+def test_validation_error_includes_source_location(
+    project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Validation errors should include where the task was declared."""
+    _write_recipe(
+        project,
+        """\
+        from cook import get_context
+        ctx = get_context()
+        ctx.sh(name="a", cmd="echo a", outputs=["shared.txt"])
+        ctx.sh(name="b", cmd="echo b", outputs=["shared.txt"])
+        """,
+    )
+    rc = main(["run", "*"])
+    assert rc == 1
+    captured = capsys.readouterr().err
+    assert "recipe.py:" in captured
+
+
 def test_validation_error_cycle(
     project: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
