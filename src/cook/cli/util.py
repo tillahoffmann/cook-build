@@ -204,6 +204,9 @@ def print_task_detail(
     if reason:
         print(f"    reason: {reason}")
 
+    if task.source_location:
+        print(f"    declared at: {task.source_location}")
+
     # Dependencies
     deps = task.task_deps
     if deps:

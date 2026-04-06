@@ -21,8 +21,17 @@ def test_register_stores_and_returns_task(ctx: Context) -> None:
 
 def test_register_raises_on_duplicate(ctx: Context) -> None:
     ctx.register(Task(name="a"))
-    with pytest.raises(ValueError, match="Duplicate task name"):
+    with pytest.raises(ValueError, match="duplicate name"):
         ctx.register(Task(name="a"))
+
+
+def test_register_duplicate_shows_both_locations(ctx: Context) -> None:
+    ctx.register(Task(name="dup"))
+    with pytest.raises(ValueError, match="test_context.py") as exc_info:
+        ctx.register(Task(name="dup"))
+    msg = str(exc_info.value)
+    # Both the original and new registration locations should appear
+    assert msg.count("test_context.py") == 2
 
 
 def test_sh_creates_and_registers(ctx: Context) -> None:
@@ -110,7 +119,7 @@ def test_validate_fails_unregistered_dep() -> None:
 def test_validate_fails_duplicate_outputs(ctx: Context) -> None:
     ctx.sh(name="a", cmd="echo a", outputs=["out.o"])
     ctx.sh(name="b", cmd="echo b", outputs=["out.o"])
-    with pytest.raises(ValueError, match="Duplicate output path"):
+    with pytest.raises(ValueError, match="duplicate output"):
         ctx.validate()
 
 
@@ -154,7 +163,7 @@ def test_validate_duplicate_outputs_resolved_paths(
     abs_path = str(tmp_path / "out.o")
     ctx.sh(name="a", cmd="echo a", outputs=[abs_path])
     ctx.sh(name="b", cmd="echo b", outputs=[abs_path])
-    with pytest.raises(ValueError, match="Duplicate output path"):
+    with pytest.raises(ValueError, match="duplicate output"):
         ctx.validate()
 
 
@@ -327,3 +336,25 @@ def test_sh_cmd_sequence_coerces_non_str(ctx: Context) -> None:
 def test_db_path(tmp_path: Path) -> None:
     with Context(project_root=tmp_path) as ctx:
         assert ctx.db_path == tmp_path / ".cook" / "store.db"
+
+
+def test_register_captures_source_location(ctx: Context) -> None:
+    t = Task(name="loc-test")
+    ctx.register(t)
+    assert t.source_file is not None
+    assert t.source_line is not None
+    assert "test_context.py" in t.source_file
+    assert isinstance(t.source_line, int)
+
+
+def test_sh_captures_source_location(ctx: Context) -> None:
+    t = ctx.sh(name="loc-sh", cmd="echo hi")
+    assert t.source_file is not None
+    assert "test_context.py" in t.source_file
+
+
+def test_group_captures_source_location(ctx: Context) -> None:
+    with ctx.group("loc-group") as g:
+        pass
+    assert g.source_file is not None
+    assert "test_context.py" in g.source_file

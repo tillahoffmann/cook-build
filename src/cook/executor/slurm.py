@@ -141,13 +141,13 @@ class SlurmExecutor(Executor):
                 continue
             if not isinstance(slurm_opts, dict):
                 raise ValueError(
-                    f"Task {task.name!r}: 'slurm' must be a dict, "
+                    f"Task {task.label}: 'slurm' must be a dict, "
                     f"got {type(slurm_opts).__name__}"
                 )
             unknown = set(slurm_opts) - valid_keys
             if unknown:
                 raise ValueError(
-                    f"Task {task.name!r}: unknown slurm option(s): "
+                    f"Task {task.label}: unknown slurm option(s): "
                     f"{', '.join(sorted(unknown))}. "
                     f"Valid options: {', '.join(sorted(valid_keys))}"
                 )

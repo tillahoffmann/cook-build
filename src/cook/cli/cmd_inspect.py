@@ -25,6 +25,8 @@ def _task_to_dict(
         "inputs": [str(f) for f in task.file_inputs],
         "outputs": [str(o) for o in task.outputs],
     }
+    if task.source_location:
+        obj["source"] = task.source_location
     if isinstance(task, ShellTask) and task.cmd:
         obj["cmd"] = task.cmd
     if record is not None:

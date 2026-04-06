@@ -21,7 +21,7 @@ def check_deps_registered(
         for dep in task.task_deps:
             if dep.name not in tasks:
                 raise ValueError(
-                    f"Task {task.name!r} depends on {dep.name!r}, "
+                    f"Task {task.label}: depends on {dep.name!r}, "
                     "which is not registered in this context."
                 )
     return tasks
@@ -58,10 +58,10 @@ class CheckOutputsAndResolveFileDeps:
             for out in task.outputs:
                 resolved = self._resolve_key(out, root)
                 if resolved in seen_outputs:
+                    other = tasks[seen_outputs[resolved]]
                     raise ValueError(
-                        f"Duplicate output path {str(out)!r}: "
-                        f"both {seen_outputs[resolved]!r} and {task.name!r} "
-                        "declare it as an output."
+                        f"Task {task.label}: duplicate output "
+                        f"{str(out)!r} (also declared by {other.label})."
                     )
                 seen_outputs[resolved] = task.name
                 output_index[resolved] = task
@@ -74,7 +74,7 @@ class CheckOutputsAndResolveFileDeps:
                 resolved_inp = self._resolve_key(inp, root)
                 if seen_outputs.get(resolved_inp) == task.name:
                     raise ValueError(
-                        f"Task {task.name!r} has {str(inp)!r} as both "
+                        f"Task {task.label}: {str(inp)!r} is both "
                         "an input and an output."
                     )
                 producer = output_index.get(resolved_inp)
@@ -94,7 +94,7 @@ def check_extra_keys(
         unknown = set(task.extra) - valid
         if unknown:
             raise ValueError(
-                f"Task {task.name!r}: unknown extra key(s): "
+                f"Task {task.label}: unknown extra key(s): "
                 f"{', '.join(sorted(unknown))}. "
                 f"Valid keys are registered executor names: "
                 f"{', '.join(sorted(valid))}"
